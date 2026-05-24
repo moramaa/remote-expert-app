@@ -90,7 +90,7 @@ export default function MatterportViewer({
                   rotation: {
                     x: pose.rotation?.x ?? 0,
                     y: pose.rotation?.y ?? 0,
-                    z: pose.rotation?.z ?? 0,
+                    z: 0,
                   },
                 });
               });

@@ -39,6 +39,7 @@ export default function ExpertPage() {
   const [sentInstructions, setSentInstructions] = useState<Instruction[]>([]);
   const [mirrorView, setMirrorView] = useState(false);
   const [viewerReady, setViewerReady] = useState(false);
+  const [mpSdk, setMpSdk] = useState<MatterportSdk | null>(null);
   const [laser, setLaser] = useState<{ x: number; y: number } | null>(null);
   const [pendingMarker, setPendingMarker] = useState<PendingMarker | null>(null);
   const [lastAction, setLastAction] = useState('');
@@ -208,10 +209,10 @@ export default function ExpertPage() {
             captureClicks={captureClicks}
             onMarkerClick={handleMarkerClick}
             onCameraMove={handleCameraMove}
-            onSdkReady={() => setViewerReady(true)}
+            onSdkReady={(sdk) => { setViewerReady(true); setMpSdk(sdk); }}
           >
             <HighlightZoneDrawer active={mode === 'highlight'} zones={zones} onComplete={addZone} />
-            <MarkersOverlay markers={markers} />
+            <MarkersOverlay markers={markers} mpSdk={mpSdk} containerRef={viewerWrapperRef} />
             <LaserOverlay position={laser} />
             <MarkerLabelDialog
               position={pendingMarker?.screen ?? null}

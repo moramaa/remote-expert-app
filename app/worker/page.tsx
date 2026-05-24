@@ -20,6 +20,7 @@ export default function WorkerPage() {
   const { socket, isConnected, connectionCount } = useSocket();
 
   const [viewerReady, setViewerReady] = useState(false);
+  const [mpSdk, setMpSdk] = useState<MatterportSdk | null>(null);
   const [markers, setMarkers] = useState<Marker[]>([]);
   const [zones, setZones] = useState<HighlightZone[]>([]);
   const [laser, setLaser] = useState<LaserPointer | null>(null);
@@ -115,11 +116,11 @@ export default function WorkerPage() {
         <div ref={viewerWrapperRef} className="relative h-[50vh] min-h-[320px] bg-black">
           <MatterportViewer
             isReadOnly
-            onSdkReady={() => setViewerReady(true)}
+            onSdkReady={(sdk) => { setViewerReady(true); setMpSdk(sdk); }}
             syncedCamera={syncedCamera}
           >
             <WorkerZonesOverlay zones={zones} />
-            <WorkerMarkersOverlay markers={markers} />
+            <WorkerMarkersOverlay markers={markers} mpSdk={mpSdk} containerRef={viewerWrapperRef} />
             <LaserPointerDot position={laser} />
           </MatterportViewer>
         </div>
