@@ -5,7 +5,13 @@ import { io, Socket } from 'socket.io-client';
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
+  SocketAuthPayload,
 } from '@/types/socket';
+import {
+  getStoredUserId,
+  getStoredRole,
+  getStoredSessionId,
+} from '@/lib/identity';
 
 export type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -20,6 +26,13 @@ function getSocketUrl(): string {
   return `${window.location.protocol}//${window.location.hostname}:3001`;
 }
 
+function buildAuth(): SocketAuthPayload {
+  const userId    = getStoredUserId()  ?? 'anonymous';
+  const role      = getStoredRole()    ?? 'worker';
+  const sessionId = getStoredSessionId() ?? undefined;
+  return { userId, role, ...(sessionId ? { sessionId } : {}) };
+}
+
 export function useSocket(): UseSocketResult {
   const [socket] = useState<AppSocket>(() =>
     io(getSocketUrl(), {
@@ -28,24 +41,28 @@ export function useSocket(): UseSocketResult {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: Infinity,
+      auth: buildAuth(),
     })
   );
   const [isConnected, setIsConnected] = useState(false);
   const [connectionCount, setConnectionCount] = useState(0);
 
   useEffect(() => {
-    const handleConnect = (): void => setIsConnected(true);
-    const handleDisconnect = (): void => setIsConnected(false);
-    const handleCount = (count: number): void => setConnectionCount(count);
+    // Refresh auth on each mount in case localStorage changed since socket was created
+    socket.auth = buildAuth();
 
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
+    const handleConnect    = (): void => setIsConnected(true);
+    const handleDisconnect = (): void => setIsConnected(false);
+    const handleCount      = (count: number): void => setConnectionCount(count);
+
+    socket.on('connect',          handleConnect);
+    socket.on('disconnect',       handleDisconnect);
     socket.on('connection-count', handleCount);
     socket.connect();
 
     return () => {
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
+      socket.off('connect',          handleConnect);
+      socket.off('disconnect',       handleDisconnect);
       socket.off('connection-count', handleCount);
       socket.disconnect();
     };

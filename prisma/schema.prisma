@@ -1,0 +1,53 @@
+// Prisma schema for FieldSync MVP
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ── Machines (seed data, shared by cert picker + SOS flow) ──────────────────
+
+model Machine {
+  id     String @id   // e.g. "krones_filler"
+  label  String       // e.g. "Krones Filler"
+  vendor String       // e.g. "Krones"
+
+  certifications ExpertCertification[]
+}
+
+// ── Expert profile ──────────────────────────────────────────────────────────
+
+model Expert {
+  id              String @id   // UUID from client localStorage
+  name            String
+  yearsExperience Int
+  languages       String       // JSON-encoded string[], e.g. '["en","de"]'
+  createdAt       DateTime @default(now())
+
+  certifications ExpertCertification[]
+}
+
+model ExpertCertification {
+  expertId  String
+  machineId String
+
+  expert  Expert  @relation(fields: [expertId],  references: [id], onDelete: Cascade)
+  machine Machine @relation(fields: [machineId], references: [id])
+
+  @@id([expertId, machineId])
+}
+
+// ── Worker profile ──────────────────────────────────────────────────────────
+
+model Worker {
+  id        String @id   // UUID from client localStorage
+  name      String
+  factory   String
+  roleLevel String       // "junior_operator" | "maintenance" | "senior_operator"
+  createdAt DateTime @default(now())
+}
