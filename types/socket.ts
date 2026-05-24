@@ -37,6 +37,14 @@ export interface HighlightZone {
   timestamp: number;
 }
 
+/** Full session snapshot sent to every client that connects after state exists */
+export interface SyncState {
+  markers: Marker[];
+  zones: HighlightZone[];
+  latestInstruction: Instruction | null;
+  camera: CameraState | null;
+}
+
 export interface ServerToClientEvents {
   'worker:new-marker': (marker: Marker) => void;
   'worker:remove-marker': (markerId: string) => void;
@@ -46,6 +54,8 @@ export interface ServerToClientEvents {
   'worker:camera-sync': (camera: CameraState) => void;
   'worker:highlight-zone': (zone: HighlightZone) => void;
   'worker:clear-zones': () => void;
+  /** Replays full session state to a freshly-connected client */
+  'worker:sync-state': (state: SyncState) => void;
   'connection-count': (count: number) => void;
 }
 

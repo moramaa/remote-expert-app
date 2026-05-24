@@ -10,7 +10,7 @@ import WorkerMarkersOverlay from '@/components/worker/WorkerMarkersOverlay';
 import WorkerZonesOverlay from '@/components/worker/WorkerZonesOverlay';
 import ConnectionStatus from '@/components/shared/ConnectionStatus';
 import { useSocket } from '@/hooks/useSocket';
-import type { CameraState, HighlightZone, Instruction, LaserPointer, Marker } from '@/types/socket';
+import type { CameraState, HighlightZone, Instruction, LaserPointer, Marker, SyncState } from '@/types/socket';
 
 function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -67,6 +67,15 @@ export default function WorkerPage() {
       pushActivity('clear', 'Zones cleared');
     };
 
+    const onSync = (state: SyncState) => {
+      setMarkers(state.markers);
+      setZones(state.zones);
+      if (state.latestInstruction) setActiveInstruction(state.latestInstruction);
+      if (state.camera) setSyncedCamera(state.camera);
+      pushActivity('marker', `Synced: ${state.markers.length} marker(s), ${state.zones.length} zone(s)`);
+    };
+
+    socket.on('worker:sync-state', onSync);
     socket.on('worker:new-marker', onMarker);
     socket.on('worker:remove-marker', onRemoveMarker);
     socket.on('worker:clear-markers', onClearMarkers);
@@ -77,6 +86,7 @@ export default function WorkerPage() {
     socket.on('worker:clear-zones', onClearZones);
 
     return () => {
+      socket.off('worker:sync-state', onSync);
       socket.off('worker:new-marker', onMarker);
       socket.off('worker:remove-marker', onRemoveMarker);
       socket.off('worker:clear-markers', onClearMarkers);
