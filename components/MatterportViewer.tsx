@@ -40,7 +40,7 @@ export default function MatterportViewer({
   const [errorMsg, setErrorMsg] = useState('');
 
   const sdkKey = process.env.NEXT_PUBLIC_MATTERPORT_SDK_KEY ?? '';
-  const spaceId = 'KsXw666tY7A';
+  const spaceId = 'RXLkh8vriYF'; //'RXLkh8vriYF' SxZSp6UTSY1; 
 
   // Stable callback refs so we don't re-init the viewer when parent re-renders
   const cbsRef = useRef({ onMarkerClick, onCameraMove, onSdkReady });
