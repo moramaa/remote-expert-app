@@ -14,7 +14,11 @@ const PORT = 3001;
 
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(PORT, {
   cors: {
-    origin: 'http://localhost:3000',
+    origin: [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://192.168.1.178:3000',
+    ],
     methods: ['GET', 'POST'],
   },
 });

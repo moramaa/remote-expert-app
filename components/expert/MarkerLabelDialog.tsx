@@ -15,14 +15,12 @@ export default function MarkerLabelDialog({ position, onSubmit, onCancel, autoCl
 
   useEffect(() => {
     if (!position) return;
-    setLabel('');
     inputRef.current?.focus();
     const timer = window.setTimeout(() => {
       onSubmit('');
     }, autoCloseMs);
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [position]);
+  }, [autoCloseMs, onSubmit, position]);
 
   if (!position) return null;
 

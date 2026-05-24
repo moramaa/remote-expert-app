@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
+import Script from 'next/script';
 import './globals.css';
 
 const inter = Inter({
@@ -24,7 +25,25 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrains.variable} h-full antialiased`}>
-      <body className="min-h-full bg-[#0a0f1e] text-zinc-100">{children}</body>
+      <body className="min-h-full bg-[#0a0f1e] text-zinc-100">
+        <Script id="matterport-analytics-rejection-guard" strategy="beforeInteractive">
+          {`
+            window.addEventListener('unhandledrejection', function(event) {
+              var reason = event && event.reason;
+              var isMatterportAnalyticsNetworkFailure =
+                reason &&
+                typeof reason === 'object' &&
+                reason.status_code === 0;
+
+              if (isMatterportAnalyticsNetworkFailure) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+              }
+            }, true);
+          `}
+        </Script>
+        {children}
+      </body>
     </html>
   );
 }

@@ -139,7 +139,7 @@ export default function MatterportViewer({
     } else if (mpSdk.Camera.setRotation) {
       // Fallback: expert is not at a sweep (e.g. free-flight mode) —
       // at least sync rotation so the view direction matches
-      mpSdk.Camera.setRotation({ x: rotation.x, y: rotation.y }).catch(() => {});
+      mpSdk.Camera.setRotation({ x: rotation.x, y: rotation.y }).catch(() => { });
     }
   }, [syncedCamera]);
 

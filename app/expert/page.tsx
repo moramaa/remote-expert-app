@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Factory, Trash2 } from 'lucide-react';
 import MatterportViewer, { type MarkerClickPayload } from '@/components/MatterportViewer';
 import ModeSelector, { type ExpertMode } from '@/components/expert/ModeSelector';
@@ -26,6 +26,7 @@ function uid(): string {
 }
 
 interface PendingMarker {
+  id: string;
   payload: MarkerClickPayload;
   screen: { x: number; y: number };
 }
@@ -49,7 +50,7 @@ export default function ExpertPage() {
 
   // ----- Marker handling -----
   const handleMarkerClick = useCallback((payload: MarkerClickPayload) => {
-    setPendingMarker({ payload, screen: payload.screen });
+    setPendingMarker({ id: uid(), payload, screen: payload.screen });
   }, []);
 
   const finalizeMarker = useCallback(
@@ -151,13 +152,16 @@ export default function ExpertPage() {
     socket?.emit('expert:laser-pointer', null);
   }, [mode, socket]);
 
-  // Clear laser when leaving laser mode
-  useEffect(() => {
-    if (mode !== 'laser' && laser) {
-      setLaser(null);
-      socket?.emit('expert:laser-pointer', null);
-    }
-  }, [mode, laser, socket]);
+  const handleModeChange = useCallback(
+    (nextMode: ExpertMode) => {
+      if (mode === 'laser' && nextMode !== 'laser') {
+        setLaser(null);
+        socket?.emit('expert:laser-pointer', null);
+      }
+      setMode(nextMode);
+    },
+    [mode, socket]
+  );
 
   // ----- Clear All -----
   const clearAll = useCallback(() => {
@@ -215,6 +219,7 @@ export default function ExpertPage() {
             <MarkersOverlay markers={markers} mpSdk={mpSdk} containerRef={viewerWrapperRef} />
             <LaserOverlay position={laser} />
             <MarkerLabelDialog
+              key={pendingMarker?.id ?? 'no-marker'}
               position={pendingMarker?.screen ?? null}
               onSubmit={finalizeMarker}
               onCancel={() => setPendingMarker(null)}
@@ -224,7 +229,7 @@ export default function ExpertPage() {
 
         {/* Control panel */}
         <aside className="flex w-[360px] flex-col gap-3 overflow-y-auto border-l border-zinc-800 bg-[#0a0f1e] p-3">
-          <ModeSelector mode={mode} onChange={setMode} />
+          <ModeSelector mode={mode} onChange={handleModeChange} />
           <MarkersList markers={markers} onRemove={removeMarker} onClearAll={clearMarkers} />
           <InstructionInput recent={sentInstructions} onSend={sendInstruction} />
           <MirrorViewToggle enabled={mirrorView} onChange={setMirrorView} />

@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently -n next,socket -c blue,magenta \"npm run dev:next\" \"npm run server\"",
+    "dev:next": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "server": "ts-node --project tsconfig.server.json server/index.ts",
-    "dev:all": "concurrently -n next,socket -c blue,magenta \"npm run dev\" \"npm run server\""
+    "dev:all": "npm run dev"
   },
   "dependencies": {
     "@matterport/webcomponent": "^0.1.45",
