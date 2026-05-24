@@ -6,21 +6,19 @@ interface Props {
   position: { x: number; y: number } | null; // screen percentages
   onSubmit: (label: string) => void;
   onCancel: () => void;
-  autoCloseMs?: number;
 }
 
-export default function MarkerLabelDialog({ position, onSubmit, onCancel, autoCloseMs = 2000 }: Props) {
+export default function MarkerLabelDialog({ position, onSubmit, onCancel }: Props) {
   const [label, setLabel] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Focus the input whenever a new dialog opens; reset the label.
+  // No auto-close timer — the dialog stays until Save, Skip, or Escape.
   useEffect(() => {
     if (!position) return;
+    setLabel('');
     inputRef.current?.focus();
-    const timer = window.setTimeout(() => {
-      onSubmit('');
-    }, autoCloseMs);
-    return () => window.clearTimeout(timer);
-  }, [autoCloseMs, onSubmit, position]);
+  }, [position]);
 
   if (!position) return null;
 
