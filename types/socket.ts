@@ -18,6 +18,8 @@ export interface Instruction {
 export interface CameraState {
   position: { x: number; y: number; z: number };
   rotation: { x: number; y: number; z: number };
+  /** Matterport sweep ID — used to teleport the worker to the same node */
+  sweep: string;
 }
 
 export interface LaserPointer {

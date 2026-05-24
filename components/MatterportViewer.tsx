@@ -92,6 +92,7 @@ export default function MatterportViewer({
                     y: pose.rotation?.y ?? 0,
                     z: 0,
                   },
+                  sweep: pose.sweep ?? '',
                 });
               });
             } catch {
@@ -118,16 +119,28 @@ export default function MatterportViewer({
     };
   }, [sdkKey, spaceId]);
 
-  // Mirror View: when syncedCamera changes, try to align camera rotation
+  // Mirror View: teleport to the expert's sweep + rotation in one atomic call
   useEffect(() => {
     const mpSdk = sdkRef.current;
-    if (!syncedCamera || !mpSdk?.Camera?.setRotation) return;
-    mpSdk.Camera.setRotation({
-      x: syncedCamera.rotation.x,
-      y: syncedCamera.rotation.y,
-    }).catch(() => {
-      // ignore — some poses aren't applicable
-    });
+    if (!syncedCamera || !mpSdk) return;
+
+    const { sweep, rotation } = syncedCamera;
+
+    // Sweep.moveTo handles both position (which node) and rotation together.
+    // INSTANT transition avoids lag that would make the views drift apart.
+    // Skip if sweep is empty — expert may be in dollhouse / floorplan mode.
+    if (sweep) {
+      mpSdk.Sweep.moveTo(sweep, {
+        rotation: { x: rotation.x, y: rotation.y },
+        transition: 'transition.instant',
+      }).catch(() => {
+        // Sweep may not exist in the worker's current floor — ignore
+      });
+    } else if (mpSdk.Camera.setRotation) {
+      // Fallback: expert is not at a sweep (e.g. free-flight mode) —
+      // at least sync rotation so the view direction matches
+      mpSdk.Camera.setRotation({ x: rotation.x, y: rotation.y }).catch(() => {});
+    }
   }, [syncedCamera]);
 
   const handleClickOverlay = useCallback(

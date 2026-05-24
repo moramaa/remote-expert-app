@@ -59,8 +59,16 @@ interface MatterportSdk {
       result?: MatterportVec3,
     ): MatterportVec3;
   };
-  Sweep?: {
-    moveTo?(sweepId: string, options?: unknown): Promise<string>;
+  Sweep: {
+    moveTo(
+      sweep: string,
+      options: {
+        rotation?: { x: number; y: number };
+        /** Use 'transition.instant' for mirror-view sync — no animation lag */
+        transition?: 'transition.instant' | 'transition.fly' | 'transition.fade';
+        transitionTime?: number;
+      },
+    ): Promise<string>;
   };
 }
 
