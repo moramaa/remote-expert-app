@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
 import { MACHINE_MAP } from '../lib/machines';
 import { prisma } from '../lib/prisma';
+import { generateSessionSummary } from '../lib/ai';
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -9,6 +10,7 @@ import type {
   SyncState,
   Marker,
   Instruction,
+  PttChunk,
   LaserPointer,
   CameraState,
   HighlightZone,
@@ -48,6 +50,10 @@ interface PendingTicket {
   machineId: string;
   machineLabel: string;
   createdAt: number;
+  // Location at time of SOS (optional)
+  locationDept?:    string;
+  locationLine?:    string;
+  locationStation?: string;
 }
 
 const onlineExperts = new Map<string, OnlineExpert>(); // expertUserId → OnlineExpert
@@ -84,10 +90,15 @@ function notifyMatchingExperts(ticket: PendingTicket): void {
 // ── Phase 1: per-session live state ──────────────────────────────────────────
 
 interface SessionState {
-  markers: Map<string, Marker>;
-  zones: Map<string, HighlightZone>;
+  markers:           Map<string, Marker>;
+  zones:             Map<string, HighlightZone>;
   latestInstruction: Instruction | null;
-  latestCamera: CameraState | null;
+  latestCamera:      CameraState | null;
+  // ── Epic 5: session capture ───────────────────────────────────────────────
+  safetyTriggered:   boolean;
+  instructionLog:    Instruction[];
+  transcriptLog:     PttChunk[];
+  driver:            'expert' | 'worker' | null;  // who is driving the camera
 }
 
 const sessions = new Map<string, SessionState>();
@@ -95,10 +106,14 @@ const sessions = new Map<string, SessionState>();
 function getOrCreateSession(sessionId: string): SessionState {
   if (!sessions.has(sessionId)) {
     sessions.set(sessionId, {
-      markers: new Map(),
-      zones: new Map(),
+      markers:           new Map(),
+      zones:             new Map(),
       latestInstruction: null,
-      latestCamera: null,
+      latestCamera:      null,
+      safetyTriggered:   false,
+      instructionLog:    [],
+      transcriptLog:     [],
+      driver:            null,
     });
   }
   return sessions.get(sessionId)!;
@@ -172,7 +187,7 @@ io.on('connection', (socket) => {
 
   // ── Phase 2: worker opens SOS ─────────────────────────────────────────────
 
-  socket.on('worker:sos-create', ({ machineId, workerName, workerFactory }, ack) => {
+  socket.on('worker:sos-create', ({ machineId, workerName, workerFactory, locationDept, locationLine, locationStation }, ack) => {
     const machine = MACHINE_MAP.get(machineId);
     if (!machine) {
       ack({ error: `Unknown machine: ${machineId}` });
@@ -189,6 +204,9 @@ io.on('connection', (socket) => {
       machineId,
       machineLabel: machine.label,
       createdAt: Date.now(),
+      locationDept,
+      locationLine,
+      locationStation,
     };
 
     pendingTickets.set(ticketId, ticket);
@@ -247,14 +265,17 @@ io.on('connection', (socket) => {
       expertEntry.expertName = expertName;
     }
 
-    // Persist session record to DB
+    // Persist session record to DB (include location captured at ticket creation)
     void prisma.session.create({
       data: {
-        id:        newSessionId,
-        ticketId:  ticketId,
-        expertId:  userId,
-        workerId:  ticket.workerId,
-        machineId: ticket.machineId,
+        id:               newSessionId,
+        ticketId:         ticketId,
+        expertId:         userId,
+        workerId:         ticket.workerId,
+        machineId:        ticket.machineId,
+        locationDept:     ticket.locationDept     ?? null,
+        locationLine:     ticket.locationLine     ?? null,
+        locationStation:  ticket.locationStation  ?? null,
       },
     }).catch((err: unknown) => console.warn('[db] session.create failed:', err));
 
@@ -298,6 +319,7 @@ io.on('connection', (socket) => {
 
   socket.on('expert:send-instruction', (instruction: Instruction) => {
     s.latestInstruction = instruction;
+    s.instructionLog.push(instruction);  // accumulate for AI summarization
     socket.to(sessionId).emit('worker:instruction', instruction);
   });
 
@@ -306,8 +328,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('expert:camera-sync', (camera: CameraState) => {
-    s.latestCamera = camera;
-    socket.to(sessionId).emit('worker:camera-sync', camera);
+    // Only relay if expert is currently the driver (or driver is unset / default)
+    if (s.driver === null || s.driver === 'expert') {
+      s.latestCamera = camera;
+      socket.to(sessionId).emit('worker:camera-sync', camera);
+    }
   });
 
   socket.on('expert:highlight-zone', (zone: HighlightZone) => {
@@ -326,6 +351,12 @@ io.on('connection', (socket) => {
     const isExpert = role === 'expert';
     const now = new Date();
 
+    // Snapshot session capture data before the async chain
+    const markerLog       = JSON.stringify(Array.from(s.markers.values()));
+    const instructionLog  = JSON.stringify(s.instructionLog);
+    const transcriptLog   = JSON.stringify(s.transcriptLog);
+    const safetyTriggered = s.safetyTriggered;
+
     // Update the DB record (fire-and-forget; don't block the event loop)
     void prisma.session.findUnique({ where: { id: sessionId } })
       .then((existing: Awaited<ReturnType<typeof prisma.session.findUnique>>) => {
@@ -333,13 +364,26 @@ io.on('connection', (socket) => {
         const durationSeconds = existing.startedAt
           ? Math.round((now.getTime() - existing.startedAt.getTime()) / 1000)
           : undefined;
+        const isFirstEnd = !existing.endedAt;
         return prisma.session.update({
           where: { id: sessionId },
           data: {
             ...(isExpert ? { resolvedExpert: resolved } : { resolvedWorker: resolved }),
-            // Only set endedAt on the first "end" received
-            ...(!existing.endedAt ? { endedAt: now, durationSeconds } : {}),
+            // Only write session capture data + endedAt on the FIRST end received
+            ...(isFirstEnd ? {
+              endedAt:        now,
+              durationSeconds,
+              markerLog,
+              instructionLog,
+              transcriptLog,
+              safetyTriggered,
+            } : {}),
           },
+        }).then(() => {
+          // Trigger AI summarization after the first end persists
+          if (isFirstEnd) {
+            triggerAiSummary(sessionId);
+          }
         });
       })
       .catch((err: unknown) => console.warn('[db] session.end update failed:', err));
@@ -363,6 +407,7 @@ io.on('connection', (socket) => {
   // ── Emergency freeze ──────────────────────────────────────────────────────
 
   socket.on('expert:emergency-freeze', () => {
+    s.safetyTriggered = true;  // flag for AI summarizer
     console.log(`[emergency] expert triggered freeze on session=${sessionId}`);
     socket.to(sessionId).emit('worker:emergency-freeze');
   });
@@ -370,6 +415,55 @@ io.on('connection', (socket) => {
   socket.on('worker:emergency-acknowledged', () => {
     console.log(`[emergency] worker acknowledged on session=${sessionId}`);
     socket.to(sessionId).emit('expert:emergency-acknowledged');
+  });
+
+  // ── PTT (Push-to-Talk) ────────────────────────────────────────────────────
+
+  socket.on('expert:ptt-chunk', (chunk: PttChunk) => {
+    s.transcriptLog.push(chunk);
+    socket.to(sessionId).emit('worker:expert-ptt', chunk);  // live subtitle for worker
+  });
+
+  socket.on('worker:ptt-chunk', (chunk: PttChunk) => {
+    s.transcriptLog.push(chunk);
+    socket.to(sessionId).emit('expert:worker-ptt', chunk);  // live subtitle for expert
+  });
+
+  // ── Bi-directional Mirror View ────────────────────────────────────────────
+
+  socket.on('expert:mirror-on', () => {
+    s.driver = 'expert';
+    io.to(sessionId).emit('session:driver-changed', { driver: 'expert' });
+    socket.to(sessionId).emit('worker:mirror-forced-off');
+    console.log(`[mirror] expert is driving session=${sessionId}`);
+  });
+
+  socket.on('expert:mirror-off', () => {
+    if (s.driver === 'expert') {
+      s.driver = null;
+      io.to(sessionId).emit('session:driver-changed', { driver: null });
+    }
+  });
+
+  socket.on('worker:mirror-on', () => {
+    s.driver = 'worker';
+    io.to(sessionId).emit('session:driver-changed', { driver: 'worker' });
+    socket.to(sessionId).emit('expert:mirror-forced-off');
+    console.log(`[mirror] worker is driving session=${sessionId}`);
+  });
+
+  socket.on('worker:mirror-off', () => {
+    if (s.driver === 'worker') {
+      s.driver = null;
+      io.to(sessionId).emit('session:driver-changed', { driver: null });
+    }
+  });
+
+  socket.on('worker:camera-sync', (camera: CameraState) => {
+    if (s.driver === 'worker') {
+      s.latestCamera = camera;
+      socket.to(sessionId).emit('expert:worker-camera', camera);
+    }
   });
 
   // ── Disconnect ────────────────────────────────────────────────────────────
@@ -383,8 +477,57 @@ io.on('connection', (socket) => {
       onlineExperts.delete(userId);
     }
 
+    // If the disconnected party was driving, reset driver state
+    if ((role === 'expert' && s.driver === 'expert') ||
+        (role === 'worker' && s.driver === 'worker')) {
+      s.driver = null;
+      io.to(sessionId).emit('session:driver-changed', { driver: null });
+    }
+
     broadcastCount();
   });
 });
+
+// ── AI Summarization (post-session background job) ────────────────────────────
+
+async function triggerAiSummary(sessionId: string): Promise<void> {
+  try {
+    const session = await prisma.session.findUnique({ where: { id: sessionId } });
+    if (!session) return;
+
+    const machine = MACHINE_MAP.get(session.machineId);
+    const machineLabel = machine?.label ?? session.machineId;
+
+    const instructionLog: Instruction[] = session.instructionLog
+      ? (JSON.parse(session.instructionLog) as Instruction[])
+      : [];
+    const transcriptLog: PttChunk[] = session.transcriptLog
+      ? (JSON.parse(session.transcriptLog) as PttChunk[])
+      : [];
+
+    const summary = await generateSessionSummary({
+      machineLabel,
+      instructionLog,
+      transcriptLog,
+      resolvedExpert:  session.resolvedExpert ?? null,
+      resolvedWorker:  session.resolvedWorker ?? null,
+      safetyTriggered: session.safetyTriggered,
+    });
+
+    await prisma.session.update({
+      where: { id: sessionId },
+      data:  { summary },
+    });
+
+    console.log(`[ai] summary generated for session=${sessionId} (${summary.length} chars)`);
+  } catch (err) {
+    console.error('[ai] summary generation failed for session', sessionId, err);
+    // Mark as failed so the UI can offer a "Regenerate" option
+    await prisma.session.update({
+      where: { id: sessionId },
+      data:  { summary: '__AI_FAILED__' },
+    }).catch(() => {/* noop — best effort */});
+  }
+}
 
 console.log(`[socket] server listening on :${PORT}`);

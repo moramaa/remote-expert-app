@@ -13,17 +13,20 @@ import HighlightZoneDrawer from '@/components/expert/HighlightZoneDrawer';
 import MarkerLabelDialog from '@/components/expert/MarkerLabelDialog';
 import EmergencyFreezeButton from '@/components/expert/EmergencyFreezeButton';
 import PlaybookSelector from '@/components/expert/PlaybookSelector';
+import PttButton from '@/components/shared/PttButton';
+import DriverIndicator from '@/components/shared/DriverIndicator';
 import ConnectionStatus from '@/components/shared/ConnectionStatus';
 import StatusBar from '@/components/shared/StatusBar';
 import EndSessionButton from '@/components/shared/EndSessionButton';
 import SessionFeedbackModal from '@/components/shared/SessionFeedbackModal';
 import { useSocket } from '@/hooks/useSocket';
-import { getStoredRole, getStoredSessionId } from '@/lib/identity';
+import { getStoredRole, getStoredSessionId, getStoredUserId } from '@/lib/identity';
 import type {
   CameraState,
   HighlightZone,
   Instruction,
   Marker,
+  PttChunk,
 } from '@/types/socket';
 
 const STEM_SCALE = 0.3;
@@ -51,11 +54,17 @@ export default function ExpertPage() {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   // Notification banners for worker responses
   const [notification, setNotification] = useState<{ text: string; color: string } | null>(null);
+  // Epic 5: bidirectional mirror
+  const [syncedCamera, setSyncedCamera] = useState<CameraState | null>(null);
+  const [driver, setDriver] = useState<'expert' | 'worker' | null>(null);
+  // Epic 5: Worker PTT subtitle (auto-clears after 4s)
+  const [workerPttSubtitle, setWorkerPttSubtitle] = useState<string | null>(null);
 
   const viewerWrapperRef = useRef<HTMLDivElement>(null);
   const lastLaserEmitRef = useRef<number>(0);
   const lastIntersectionRef = useRef<MatterportIntersection | null>(null);
   const mpSdkRef = useRef<MatterportSdk | null>(null);
+  const workerPttTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { mpSdkRef.current = mpSdk; }, [mpSdk]);
 
@@ -66,7 +75,27 @@ export default function ExpertPage() {
     return () => clearTimeout(t);
   }, [notification]);
 
-  // ── Socket listeners for new events ────────────────────────────────────────
+  // Auto-dismiss worker PTT subtitle after 4s
+  useEffect(() => {
+    if (!workerPttSubtitle) return;
+    if (workerPttTimerRef.current) clearTimeout(workerPttTimerRef.current);
+    workerPttTimerRef.current = setTimeout(() => setWorkerPttSubtitle(null), 4000);
+    return () => {
+      if (workerPttTimerRef.current) clearTimeout(workerPttTimerRef.current);
+    };
+  }, [workerPttSubtitle]);
+
+  // Emit mirror-on / mirror-off when mirrorView changes
+  useEffect(() => {
+    if (!socket) return;
+    if (mirrorView) {
+      socket.emit('expert:mirror-on');
+    } else {
+      socket.emit('expert:mirror-off');
+    }
+  }, [mirrorView, socket]);
+
+  // ── Socket listeners ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
@@ -90,21 +119,45 @@ export default function ExpertPage() {
       setLastAction('Emergency acknowledged by worker');
     };
 
-    const onSessionEnded = () => {
-      // Peer ended the session — show our own feedback modal
-      setFeedbackOpen(true);
+    const onSessionEnded = () => { setFeedbackOpen(true); };
+
+    // Epic 5: worker camera relay (when worker is driving)
+    const onWorkerCamera = (camera: CameraState) => { setSyncedCamera(camera); };
+
+    // Epic 5: expert mirror was forced off (worker took over)
+    const onMirrorForcedOff = () => {
+      setMirrorView(false);
+      // Note: mirror-off socket emit is handled by the mirrorView useEffect above
     };
 
-    socket.on('expert:step-done', onStepDone);
-    socket.on('expert:needs-clarification', onNeedsClarification);
+    // Epic 5: who is driving
+    const onDriverChanged = ({ driver: d }: { driver: 'expert' | 'worker' | null }) => {
+      setDriver(d);
+    };
+
+    // Epic 5: worker PTT subtitle
+    const onWorkerPtt = (chunk: PttChunk) => {
+      setWorkerPttSubtitle(chunk.text);
+    };
+
+    socket.on('expert:step-done',            onStepDone);
+    socket.on('expert:needs-clarification',  onNeedsClarification);
     socket.on('expert:emergency-acknowledged', onEmergencyAcknowledged);
-    socket.on('session:ended', onSessionEnded);
+    socket.on('session:ended',               onSessionEnded);
+    socket.on('expert:worker-camera',        onWorkerCamera);
+    socket.on('expert:mirror-forced-off',    onMirrorForcedOff);
+    socket.on('session:driver-changed',      onDriverChanged);
+    socket.on('expert:worker-ptt',           onWorkerPtt);
 
     return () => {
-      socket.off('expert:step-done', onStepDone);
-      socket.off('expert:needs-clarification', onNeedsClarification);
+      socket.off('expert:step-done',            onStepDone);
+      socket.off('expert:needs-clarification',  onNeedsClarification);
       socket.off('expert:emergency-acknowledged', onEmergencyAcknowledged);
-      socket.off('session:ended', onSessionEnded);
+      socket.off('session:ended',               onSessionEnded);
+      socket.off('expert:worker-camera',        onWorkerCamera);
+      socket.off('expert:mirror-forced-off',    onMirrorForcedOff);
+      socket.off('session:driver-changed',      onDriverChanged);
+      socket.off('expert:worker-ptt',           onWorkerPtt);
     };
   }, [socket, sentInstructions]);
 
@@ -200,6 +253,15 @@ export default function ExpertPage() {
       setSentInstructions((prev) => [ins, ...prev].slice(0, 20));
       socket?.emit('expert:send-instruction', ins);
       setLastAction('Instruction sent');
+    },
+    [socket],
+  );
+
+  // ----- PTT -----
+  const handlePttChunk = useCallback(
+    (chunk: PttChunk) => {
+      socket?.emit('expert:ptt-chunk', chunk);
+      setLastAction(`PTT: "${chunk.text.slice(0, 30)}…"`);
     },
     [socket],
   );
@@ -309,6 +371,7 @@ export default function ExpertPage() {
   );
 
   const sessionId = getStoredSessionId();
+  const userId = getStoredUserId() ?? '';
 
   return (
     <div style={{ display: 'flex', height: '100vh', flexDirection: 'column', background: '#F8FAFC', color: '#0F172A' }}>
@@ -335,6 +398,7 @@ export default function ExpertPage() {
               Space: RXLkh8vriYF
             </div>
           </div>
+          <DriverIndicator driver={driver} myRole="expert" />
         </div>
 
         {/* Notification banner */}
@@ -388,6 +452,7 @@ export default function ExpertPage() {
             onIntersectionChange={handleIntersectionChange}
             onCameraMove={handleCameraMove}
             onSdkReady={(sdk) => { setViewerReady(true); setMpSdk(sdk); }}
+            syncedCamera={driver === 'worker' ? syncedCamera : null}
           >
             <HighlightZoneDrawer active={mode === 'highlight'} zones={zones} onComplete={addZone} />
             <LaserOverlay position={laser} />
@@ -421,6 +486,31 @@ export default function ExpertPage() {
               Hover over a surface · Press <strong>Space</strong> to place marker
             </div>
           )}
+
+          {/* Worker PTT subtitle */}
+          {workerPttSubtitle && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '48px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                background: 'rgba(217,119,6,0.92)',
+                color: '#fff',
+                fontSize: '13px',
+                fontWeight: 600,
+                padding: '6px 16px',
+                borderRadius: '20px',
+                zIndex: 20,
+                whiteSpace: 'nowrap',
+                maxWidth: '80%',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              🎙 Worker: {workerPttSubtitle}
+            </div>
+          )}
         </div>
 
         {/* Control panel */}
@@ -438,6 +528,20 @@ export default function ExpertPage() {
         >
           <ModeSelector mode={mode} onChange={handleModeChange} />
           <PlaybookSelector onSendStep={sendInstruction} />
+          {/* PTT Button */}
+          <div
+            style={{
+              padding: '10px 12px',
+              border: '1px solid #E2E8F0',
+              borderRadius: '8px',
+              background: '#FFFFFF',
+            }}
+          >
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+              Push-to-Talk
+            </div>
+            <PttButton speakerId={userId} onChunk={handlePttChunk} />
+          </div>
           <InstructionInput recent={sentInstructions} onSend={(text) => sendInstruction(text)} />
           <MarkersList markers={markers} onRemove={removeMarker} onClearAll={clearMarkers} />
           <MirrorViewToggle enabled={mirrorView} onChange={setMirrorView} />

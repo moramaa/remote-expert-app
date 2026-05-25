@@ -1,5 +1,16 @@
 // ── Phase 1: live-session data types ─────────────────────────────────────────
 
+// ── PTT (Push-to-Talk) voice chunk ───────────────────────────────────────────
+export interface PttChunk {
+  id:        string;
+  text:      string;
+  startTs:   number;  // ms epoch — when PTT button was pressed
+  endTs:     number;  // ms epoch — when PTT button was released
+  speakerId: string;  // userId of the speaker
+}
+
+
+
 export interface Marker {
   id: string;
   /** World-space anchor position (from Pointer.intersection.position) */
@@ -114,6 +125,22 @@ export interface ServerToClientEvents {
   // ── Emergency ─────────────────────────────────────────────────────────────
   'worker:emergency-freeze':      () => void;
   'expert:emergency-acknowledged': () => void;
+
+  // ── PTT subtitles (relay to the other party) ──────────────────────────────
+  /** Worker's PTT chunk relayed to expert for live subtitle display */
+  'expert:worker-ptt':  (chunk: PttChunk) => void;
+  /** Expert's PTT chunk relayed to worker for live subtitle display */
+  'worker:expert-ptt':  (chunk: PttChunk) => void;
+
+  // ── Bi-directional Mirror View (Epic 5) ──────────────────────────────────
+  /** Worker's camera position relayed to expert when worker is driving */
+  'expert:worker-camera':    (camera: CameraState) => void;
+  /** Who is currently driving the shared camera view */
+  'session:driver-changed':  (payload: { driver: 'expert' | 'worker' | null }) => void;
+  /** Sent to expert when worker takes over driving (expert must disable their toggle) */
+  'expert:mirror-forced-off': () => void;
+  /** Sent to worker when expert takes over driving (worker must disable their toggle) */
+  'worker:mirror-forced-off': () => void;
 }
 
 export interface ClientToServerEvents {
@@ -139,11 +166,39 @@ export interface ClientToServerEvents {
   'expert:emergency-freeze':      () => void;
   'worker:emergency-acknowledged': () => void;
 
+  // ── PTT (Push-to-Talk) ────────────────────────────────────────────────────
+  /** Expert submits a PTT transcript chunk (logged + relayed to worker as subtitle) */
+  'expert:ptt-chunk': (chunk: PttChunk) => void;
+  /** Worker submits a PTT transcript chunk (logged + relayed to expert as subtitle) */
+  'worker:ptt-chunk': (chunk: PttChunk) => void;
+
+  // ── Bi-directional Mirror View (Epic 5) ──────────────────────────────────
+  /** Worker emits their camera position when they are driving */
+  'worker:camera-sync': (camera: CameraState) => void;
+  /** Expert announces they are starting to drive */
+  'expert:mirror-on':  () => void;
+  /** Expert announces they are stopping driving */
+  'expert:mirror-off': () => void;
+  /** Worker announces they are starting to drive */
+  'worker:mirror-on':  () => void;
+  /** Worker announces they are stopping driving */
+  'worker:mirror-off': () => void;
+
   // ── Phase 2: availability + matching ─────────────────────────────────────
   /** Expert toggles their availability; sends current cert list */
   'expert:set-availability': (payload: { online: boolean; certificationIds: string[] }) => void;
   /** Worker opens an emergency SOS ticket */
-  'worker:sos-create':       (payload: { machineId: string; workerName: string; workerFactory: string }, callback: (result: SosAck) => void) => void;
+  'worker:sos-create': (
+    payload: {
+      machineId:       string;
+      workerName:      string;
+      workerFactory:   string;
+      locationDept?:   string;
+      locationLine?:   string;
+      locationStation?: string;
+    },
+    callback: (result: SosAck) => void,
+  ) => void;
   /** Worker cancels their open ticket */
   'worker:sos-cancel':       (payload: { ticketId: string }) => void;
   /** Expert accepts an incoming ticket */
