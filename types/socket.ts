@@ -2,11 +2,14 @@
 
 export interface Marker {
   id: string;
+  /** World-space anchor position (from Pointer.intersection.position) */
   x: number;
   y: number;
   z: number;
-  screenX: number; // 0-100 percentage when placed
-  screenY: number; // 0-100 percentage when placed
+  /** Surface normal at placement point — used as Tag stemVector direction */
+  nx: number;
+  ny: number;
+  nz: number;
   label?: string;
   timestamp: number;
 }

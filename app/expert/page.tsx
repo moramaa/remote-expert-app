@@ -1,15 +1,14 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Factory, Trash2 } from 'lucide-react';
-import MatterportViewer, { type MarkerClickPayload } from '@/components/MatterportViewer';
+import MatterportViewer from '@/components/MatterportViewer';
 import ModeSelector, { type ExpertMode } from '@/components/expert/ModeSelector';
 import MarkersList from '@/components/expert/MarkersList';
 import InstructionInput from '@/components/expert/InstructionInput';
 import MirrorViewToggle from '@/components/expert/MirrorViewToggle';
 import LaserOverlay from '@/components/expert/LaserOverlay';
 import HighlightZoneDrawer from '@/components/expert/HighlightZoneDrawer';
-import MarkersOverlay from '@/components/expert/MarkersOverlay';
 import MarkerLabelDialog from '@/components/expert/MarkerLabelDialog';
 import ConnectionStatus from '@/components/shared/ConnectionStatus';
 import StatusBar from '@/components/shared/StatusBar';
@@ -21,14 +20,11 @@ import type {
   Marker,
 } from '@/types/socket';
 
+const STEM_SCALE = 0.3; // stem height in metres
+const TAG_COLOR  = { r: 0.976, g: 0.451, b: 0.086 }; // orange (#f97316)
+
 function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-interface PendingMarker {
-  id: string;
-  payload: MarkerClickPayload;
-  screen: { x: number; y: number };
 }
 
 export default function ExpertPage() {
@@ -42,53 +38,117 @@ export default function ExpertPage() {
   const [viewerReady, setViewerReady] = useState(false);
   const [mpSdk, setMpSdk] = useState<MatterportSdk | null>(null);
   const [laser, setLaser] = useState<{ x: number; y: number } | null>(null);
-  const [pendingMarker, setPendingMarker] = useState<PendingMarker | null>(null);
+  /**
+   * Set when the user presses Spacebar in marker mode.
+   * Drives the MarkerLabelDialog — the intersection is read from lastIntersectionRef
+   * and finalised when the user submits the dialog.
+   */
+  const [pendingIntersection, setPendingIntersection] = useState<MatterportIntersection | null>(null);
   const [lastAction, setLastAction] = useState('');
 
   const viewerWrapperRef = useRef<HTMLDivElement>(null);
   const lastLaserEmitRef = useRef<number>(0);
+  /**
+   * Always-current Pointer.intersection from the SDK.
+   * Updated by onIntersectionChange (no click overlay — events reach the iframe
+   * so raycasting stays live as the cursor moves over the 3D model).
+   */
+  const lastIntersectionRef = useRef<MatterportIntersection | null>(null);
+  const mpSdkRef = useRef<MatterportSdk | null>(null);
 
-  // ----- Marker handling -----
-  const handleMarkerClick = useCallback((payload: MarkerClickPayload) => {
-    setPendingMarker({ id: uid(), payload, screen: payload.screen });
+  // Keep refs in sync with state
+  useEffect(() => { mpSdkRef.current = mpSdk; }, [mpSdk]);
+
+  // ----- Intersection tracking -----
+  const handleIntersectionChange = useCallback((i: MatterportIntersection | null) => {
+    lastIntersectionRef.current = i;
   }, []);
 
-  const finalizeMarker = useCallback(
-    (label: string) => {
-      if (!pendingMarker) return;
-      const { world, screen } = pendingMarker.payload;
-      const marker: Marker = {
-        id: uid(),
-        x: world.x,
-        y: world.y,
-        z: world.z,
-        screenX: screen.x,
-        screenY: screen.y,
-        label: label.trim() || undefined,
-        timestamp: Date.now(),
+  // ----- Spacebar → open label dialog for marker placement -----
+  useEffect(() => {
+    if (mode !== 'marker') return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return;
+      // Prevent the SDK from consuming the space bar for its own navigation
+      e.preventDefault();
+      e.stopPropagation();
+      const i = lastIntersectionRef.current;
+      if (!i) return;
+      // Skip if cursor is hovering on empty air (no model surface under cursor)
+      if (i.object === 'intersectedobject.none') return;
+      setPendingIntersection(i);
+    };
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
+  }, [mode]);
+
+  // ----- Marker handling -----
+
+  /**
+   * Called when the user submits (or skips) the label dialog.
+   * Places a native SDK Tag at the pending intersection's exact 3D position
+   * with a stem oriented along the surface normal.
+   */
+  const handleLabelSubmit = useCallback(
+    async (label: string) => {
+      const intersection = pendingIntersection;
+      setPendingIntersection(null);
+      if (!intersection || !mpSdkRef.current) return;
+
+      const normal = intersection.normal ?? { x: 0, y: 1, z: 0 };
+      const descriptor: MatterportTagDescriptor = {
+        anchorPosition: intersection.position,
+        stemVector: {
+          x: normal.x * STEM_SCALE,
+          y: normal.y * STEM_SCALE,
+          z: normal.z * STEM_SCALE,
+        },
+        label: label.trim() || `Marker ${markers.length + 1}`,
+        color: TAG_COLOR,
+        stemVisible: true,
       };
-      setMarkers((prev) => [...prev, marker]);
-      socket?.emit('expert:place-marker', marker);
-      setLastAction(`Marker placed${label ? `: "${label}"` : ''}`);
-      setPendingMarker(null);
+
+      try {
+        const [sdkTagId] = await mpSdkRef.current.Tag.add(descriptor);
+        const marker: Marker = {
+          id: sdkTagId,
+          x: intersection.position.x,
+          y: intersection.position.y,
+          z: intersection.position.z,
+          nx: normal.x,
+          ny: normal.y,
+          nz: normal.z,
+          label: label.trim() || undefined,
+          timestamp: Date.now(),
+        };
+        setMarkers((prev) => [...prev, marker]);
+        socket?.emit('expert:place-marker', marker);
+        setLastAction(`Marker placed${label.trim() ? `: "${label.trim()}"` : ''}`);
+      } catch (err) {
+        console.warn('Tag.add failed:', err);
+      }
     },
-    [pendingMarker, socket]
+    [pendingIntersection, markers.length, socket],
   );
 
   const removeMarker = useCallback(
-    (id: string) => {
+    async (id: string) => {
+      try { await mpSdkRef.current?.Tag.remove(id); } catch { /* ignore */ }
       setMarkers((prev) => prev.filter((m) => m.id !== id));
       socket?.emit('expert:remove-marker', id);
       setLastAction('Marker removed');
     },
-    [socket]
+    [socket],
   );
 
-  const clearMarkers = useCallback(() => {
+  const clearMarkers = useCallback(async () => {
+    if (mpSdkRef.current && markers.length > 0) {
+      try { await mpSdkRef.current.Tag.remove(...markers.map((m) => m.id)); } catch { /* ignore */ }
+    }
     setMarkers([]);
     socket?.emit('expert:clear-markers');
     setLastAction('Markers cleared');
-  }, [socket]);
+  }, [markers, socket]);
 
   // ----- Instructions -----
   const sendInstruction = useCallback(
@@ -96,9 +156,9 @@ export default function ExpertPage() {
       const ins: Instruction = { id: uid(), text, timestamp: Date.now() };
       setSentInstructions((prev) => [ins, ...prev].slice(0, 20));
       socket?.emit('expert:send-instruction', ins);
-      setLastAction(`Instruction sent`);
+      setLastAction('Instruction sent');
     },
-    [socket]
+    [socket],
   );
 
   // ----- Zones -----
@@ -109,7 +169,7 @@ export default function ExpertPage() {
       socket?.emit('expert:highlight-zone', zone);
       setLastAction('Highlight zone added');
     },
-    [socket]
+    [socket],
   );
 
   const clearZones = useCallback(() => {
@@ -125,7 +185,7 @@ export default function ExpertPage() {
         socket?.emit('expert:camera-sync', camera);
       }
     },
-    [mirrorView, socket]
+    [mirrorView, socket],
   );
 
   // ----- Laser pointer tracking -----
@@ -143,7 +203,7 @@ export default function ExpertPage() {
         socket?.emit('expert:laser-pointer', { x, y });
       }
     },
-    [mode, socket]
+    [mode, socket],
   );
 
   const handleViewerMouseLeave = useCallback(() => {
@@ -158,25 +218,38 @@ export default function ExpertPage() {
         setLaser(null);
         socket?.emit('expert:laser-pointer', null);
       }
+      // Dismiss any pending label dialog when leaving marker mode
+      if (mode === 'marker' && nextMode !== 'marker') {
+        setPendingIntersection(null);
+      }
       setMode(nextMode);
     },
-    [mode, socket]
+    [mode, socket],
   );
 
   // ----- Clear All -----
-  const clearAll = useCallback(() => {
+  const clearAll = useCallback(async () => {
     if (!window.confirm('Clear all markers, zones, and instructions?')) return;
+    if (mpSdkRef.current && markers.length > 0) {
+      try { await mpSdkRef.current.Tag.remove(...markers.map((m) => m.id)); } catch { /* ignore */ }
+    }
     setMarkers([]);
     setZones([]);
     setSentInstructions([]);
     socket?.emit('expert:clear-markers');
     socket?.emit('expert:clear-zones');
     setLastAction('Cleared everything');
-  }, [socket]);
+  }, [markers, socket]);
 
-  const captureClicks = mode === 'marker';
+  const headerInfo = useMemo(
+    () => ({ markerCount: markers.length, zoneCount: zones.length }),
+    [markers, zones],
+  );
 
-  const headerInfo = useMemo(() => ({ markerCount: markers.length, zoneCount: zones.length }), [markers, zones]);
+  // Crosshair cursor style in marker mode
+  const viewerWrapperStyle: React.CSSProperties = {
+    cursor: mode === 'marker' ? 'crosshair' : 'default',
+  };
 
   return (
     <div className="flex h-screen flex-col bg-[#0a0f1e] text-zinc-100">
@@ -207,24 +280,48 @@ export default function ExpertPage() {
           onMouseMove={handleViewerMouseMove}
           onMouseLeave={handleViewerMouseLeave}
           className="relative flex-1 bg-black"
+          style={viewerWrapperStyle}
         >
           <MatterportViewer
             isReadOnly={false}
-            captureClicks={captureClicks}
-            onMarkerClick={handleMarkerClick}
+            onIntersectionChange={handleIntersectionChange}
             onCameraMove={handleCameraMove}
             onSdkReady={(sdk) => { setViewerReady(true); setMpSdk(sdk); }}
           >
             <HighlightZoneDrawer active={mode === 'highlight'} zones={zones} onComplete={addZone} />
-            <MarkersOverlay markers={markers} mpSdk={mpSdk} containerRef={viewerWrapperRef} />
             <LaserOverlay position={laser} />
+            {/* Label dialog — centred in the viewer, triggered by Spacebar */}
             <MarkerLabelDialog
-              key={pendingMarker?.id ?? 'no-marker'}
-              position={pendingMarker?.screen ?? null}
-              onSubmit={finalizeMarker}
-              onCancel={() => setPendingMarker(null)}
+              key={pendingIntersection ? 'open' : 'closed'}
+              position={pendingIntersection ? { x: 50, y: 40 } : null}
+              onSubmit={handleLabelSubmit}
+              onCancel={() => setPendingIntersection(null)}
             />
           </MatterportViewer>
+
+          {/* Marker mode hint banner */}
+          {mode === 'marker' && viewerReady && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '12px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                background: 'rgba(13, 27, 42, 0.9)',
+                border: '1px solid #f97316',
+                color: '#f97316',
+                fontSize: '11px',
+                padding: '6px 14px',
+                fontFamily: 'monospace',
+                letterSpacing: '0.06em',
+                zIndex: 10,
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+              }}
+            >
+              Hover over a surface · Press <strong>Space</strong> to place marker
+            </div>
+          )}
         </div>
 
         {/* Control panel */}

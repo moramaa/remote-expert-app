@@ -3,15 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CameraState } from '@/types/socket';
 
-export interface MarkerClickPayload {
-  world: { x: number; y: number; z: number };
-  screen: { x: number; y: number }; // 0-100 percentages
-}
-
 interface MatterportViewerProps {
   isReadOnly: boolean;
-  captureClicks?: boolean;
-  onMarkerClick?: (payload: MarkerClickPayload) => void;
+  /**
+   * Fires whenever Pointer.intersection changes.
+   * The caller can store the latest intersection and use it to place
+   * native SDK Tags (Tag.add) at the exact 3D surface position.
+   */
+  onIntersectionChange?: (intersection: MatterportIntersection | null) => void;
   onCameraMove?: (camera: CameraState) => void;
   onSdkReady?: (sdk: MatterportSdk) => void;
   syncedCamera?: CameraState | null;
@@ -23,8 +22,7 @@ type Status = 'loading' | 'ready' | 'error';
 
 export default function MatterportViewer({
   isReadOnly,
-  captureClicks = false,
-  onMarkerClick,
+  onIntersectionChange,
   onCameraMove,
   onSdkReady,
   syncedCamera,
@@ -33,20 +31,19 @@ export default function MatterportViewer({
 }: MatterportViewerProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const sdkRef = useRef<MatterportSdk | null>(null);
-  const lastIntersectionRef = useRef<MatterportIntersection | null>(null);
   const lastCameraEmitRef = useRef<number>(0);
 
   const [status, setStatus] = useState<Status>('loading');
   const [errorMsg, setErrorMsg] = useState('');
 
   const sdkKey = process.env.NEXT_PUBLIC_MATTERPORT_SDK_KEY ?? '';
-  const spaceId = 'RXLkh8vriYF'; //'RXLkh8vriYF' SxZSp6UTSY1; 
+  const spaceId = 'RXLkh8vriYF';
 
   // Stable callback refs so we don't re-init the viewer when parent re-renders
-  const cbsRef = useRef({ onMarkerClick, onCameraMove, onSdkReady });
+  const cbsRef = useRef({ onIntersectionChange, onCameraMove, onSdkReady });
   useEffect(() => {
-    cbsRef.current = { onMarkerClick, onCameraMove, onSdkReady };
-  }, [onMarkerClick, onCameraMove, onSdkReady]);
+    cbsRef.current = { onIntersectionChange, onCameraMove, onSdkReady };
+  }, [onIntersectionChange, onCameraMove, onSdkReady]);
 
   // Mount viewer once
   useEffect(() => {
@@ -74,7 +71,7 @@ export default function MatterportViewer({
 
             try {
               mpSdk.Pointer.intersection.subscribe((intersection) => {
-                lastIntersectionRef.current = intersection;
+                cbsRef.current.onIntersectionChange?.(intersection);
               });
             } catch {
               // Pointer API not available in this SDK version
@@ -143,43 +140,12 @@ export default function MatterportViewer({
     }
   }, [syncedCamera]);
 
-  const handleClickOverlay = useCallback(
-    (event: React.MouseEvent<HTMLDivElement>) => {
-      if (!onMarkerClick) return;
-      const rect = event.currentTarget.getBoundingClientRect();
-      const screenX = ((event.clientX - rect.left) / rect.width) * 100;
-      const screenY = ((event.clientY - rect.top) / rect.height) * 100;
-      const world = lastIntersectionRef.current?.position ?? { x: 0, y: 0, z: 0 };
-      onMarkerClick({ world, screen: { x: screenX, y: screenY } });
-    },
-    [onMarkerClick]
-  );
-
-  /**
-   * Forward mouse-move events from the click-capture overlay to the underlying
-   * matterport-viewer element so that Pointer.intersection stays current while
-   * the overlay is blocking native events.  Without this, lastIntersectionRef
-   * is stale and placements land at the last position the cursor visited before
-   * the overlay appeared.
-   */
-  const handleMoveOverlay = useCallback(
-    (event: React.MouseEvent<HTMLDivElement>) => {
-      const viewer = mountRef.current?.querySelector('matterport-viewer');
-      if (!viewer) return;
-      viewer.dispatchEvent(
-        new MouseEvent('mousemove', {
-          bubbles:    true,
-          cancelable: true,
-          clientX:    event.clientX,
-          clientY:    event.clientY,
-          screenX:    event.screenX,
-          screenY:    event.screenY,
-          buttons:    event.buttons,
-        }),
-      );
-    },
-    [],
-  );
+  // Notify caller when viewer is torn down (e.g. route change)
+  useEffect(() => {
+    return () => {
+      cbsRef.current.onIntersectionChange?.(null);
+    };
+  }, []);
 
   return (
     <div
@@ -187,21 +153,6 @@ export default function MatterportViewer({
       style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}
     >
       <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
-
-      {/* Click capture overlay — sits above viewer when in marker mode */}
-      {captureClicks && status === 'ready' && (
-        <div
-          onClick={handleClickOverlay}
-          onMouseMove={handleMoveOverlay}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 5,
-            cursor: 'crosshair',
-            background: 'transparent',
-          }}
-        />
-      )}
 
       {/* Read-only overlay — blocks all pointer events from reaching the viewer */}
       {isReadOnly && status === 'ready' && (
@@ -220,7 +171,7 @@ export default function MatterportViewer({
         />
       )}
 
-      {/* Children render above viewer (markers, laser dot, zones, etc.) */}
+      {/* Children render above viewer (laser dot, zones, etc.) */}
       {children}
 
       {/* Loading overlay */}

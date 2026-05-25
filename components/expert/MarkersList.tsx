@@ -33,7 +33,7 @@ export default function MarkersList({ markers, onRemove, onClearAll }: Props) {
       <div className="max-h-48 overflow-y-auto">
         {markers.length === 0 ? (
           <div className="px-3 py-4 text-center text-xs text-zinc-600">
-            No markers placed. Switch to Marker mode and click on the model.
+            No markers placed. Switch to Marker mode, hover over a surface, then press Space.
           </div>
         ) : (
           markers.map((m, idx) => (

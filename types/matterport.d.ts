@@ -14,8 +14,17 @@ interface MatterportVec3 {
 
 interface MatterportIntersection {
   position: MatterportVec3;
-  normal?: MatterportVec3;
+  /** Surface normal at intersection point — used to orient tag stems */
+  normal: MatterportVec3;
   floorId?: number;
+  /**
+   * What the ray hit. Common values from the SDK:
+   *   'intersectedobject.model'   — actual 3D mesh (wall, floor, machine)
+   *   'intersectedobject.sweep'   — a panorama sweep node
+   *   'intersectedobject.tag'     — an existing Tag
+   *   'intersectedobject.none'    — nothing under the cursor
+   *   'intersectedobject.unknown' — other
+   */
   object?: string;
 }
 
@@ -31,6 +40,19 @@ interface MatterportPose {
 interface MatterportSize {
   w: number;
   h: number;
+}
+
+/** Descriptor passed to Tag.add() */
+interface MatterportTagDescriptor {
+  id?: string;
+  anchorPosition: MatterportVec3;
+  stemVector: MatterportVec3;
+  label?: string;
+  description?: string;
+  color?: { r: number; g: number; b: number };
+  stemVisible?: boolean;
+  opacity?: number;
+  iconId?: string;
 }
 
 interface MatterportSdk {
@@ -69,6 +91,32 @@ interface MatterportSdk {
         transitionTime?: number;
       },
     ): Promise<string>;
+  };
+  /**
+   * Native Matterport Tag API.
+   * Tags are first-class 3D objects placed at an anchorPosition with a stem
+   * pointing along stemVector.  The SDK handles occlusion, projection, and
+   * labelling — no HTML overlay or worldToScreen needed.
+   */
+  Tag: {
+    /**
+     * Add one or more tags to the space.
+     * Returns the SDK-assigned IDs (may differ from descriptor.id if the SDK
+     * ignores the provided id).
+     */
+    add(...tags: MatterportTagDescriptor[]): Promise<string[]>;
+    /** Remove tags by their SDK IDs. */
+    remove(...ids: string[]): Promise<void>;
+    /** Update the label / description shown in the tag's billboard. */
+    editBillboard(id: string, props: { label?: string; description?: string }): Promise<void>;
+    /** Change the disc colour (channels are 0–1). */
+    editColor(id: string, color: { r: number; g: number; b: number }): Promise<void>;
+    /** Show or hide the stem, or change its height. */
+    editStem(id: string, options: { stemVisible?: boolean; stemHeight?: number }): Promise<void>;
+  };
+  Asset: {
+    /** Register a custom texture/icon to use with Tag.editIcon(). */
+    registerTexture(id: string, src: string): Promise<void>;
   };
 }
 
