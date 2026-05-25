@@ -290,8 +290,10 @@ function SuggestionsStep({
     const isExpanded  = expanded === s.sessionId;
     const isAnswering = answered === s.sessionId;
     const isResolved  = s.resolvedExpert || s.resolvedWorker;
-    const isFailed    = s.summary === '__AI_FAILED__';
-    const isPending   = s.summary === null;
+    // Treat NULL summary (AI never persisted) the same as __AI_FAILED__ —
+    // the session data is saved, only the summary is missing.
+    const isFailed    = s.summary === '__AI_FAILED__' || s.summary === null;
+    const isPending   = false; // Lists never show "generating" — only the post-call modal does
 
     return (
       <div

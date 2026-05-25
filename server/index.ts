@@ -1,3 +1,8 @@
+// Load .env BEFORE any other import that reads process.env (ai.ts, prisma.ts).
+// tsx does not auto-load .env files, so without this the ANTHROPIC_API_KEY
+// and DATABASE_URL stay undefined and AI summaries silently fail.
+import 'dotenv/config';
+
 import { Server } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
 import { MACHINE_MAP } from '../lib/machines';

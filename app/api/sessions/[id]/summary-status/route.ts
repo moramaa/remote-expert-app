@@ -34,6 +34,12 @@ export async function GET(
     status = 'failed';
   } else if (session.summary !== null) {
     status = 'ready';
+  } else if (session.endedAt) {
+    // Session is ended but summary is still null. If more than 60s old,
+    // the AI worker either crashed before persisting or never ran — treat
+    // as failed so the UI shows the retry button instead of spinning forever.
+    const ageMs = Date.now() - session.endedAt.getTime();
+    status = ageMs > 60_000 ? 'failed' : 'pending';
   } else {
     status = 'pending';
   }

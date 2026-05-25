@@ -148,8 +148,10 @@ export default function WorkerHistoryPage() {
                 {group.map((s) => {
                   const isExpanded  = expanded === s.sessionId;
                   const isResolved  = s.resolvedExpert || s.resolvedWorker;
-                  const isFailed    = s.summary === '__AI_FAILED__';
-                  const isPending   = s.summary === null;
+                  // Treat NULL summary the same as __AI_FAILED__ in lists —
+                  // session is saved, only summary is missing
+                  const isFailed    = s.summary === '__AI_FAILED__' || s.summary === null;
+                  const isPending   = false;
 
                   return (
                     <div
