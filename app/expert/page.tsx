@@ -594,6 +594,7 @@ export default function ExpertPage() {
       {/* Session feedback modal */}
       <SessionFeedbackModal
         open={feedbackOpen}
+        role="expert"
         sessionId={sessionId}
         onAnswer={handleFeedbackAnswer}
         onDone={handleFeedbackDone}

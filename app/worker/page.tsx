@@ -498,6 +498,7 @@ function WorkerPageInner() {
       {!isPreview && (
         <SessionFeedbackModal
           open={feedbackOpen}
+          role="worker"
           sessionId={sessionId}
           onAnswer={handleFeedbackAnswer}
           onDone={handleFeedbackDone}
