@@ -23,47 +23,140 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-[#0a0f1e] p-8 text-zinc-100">
-      <div className="text-center">
-        <h1 className="font-mono text-4xl font-bold tracking-tight text-orange-500">FieldSync</h1>
-        <p className="mt-2 text-sm uppercase tracking-[0.3em] text-zinc-500">
+    <div
+      style={{
+        display: 'flex',
+        minHeight: '100vh',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '32px',
+        background: '#F8FAFC',
+        padding: '32px',
+        color: '#0F172A',
+      }}
+    >
+      <div style={{ textAlign: 'center' }}>
+        <h1
+          style={{
+            fontFamily: 'var(--font-mono, monospace)',
+            fontSize: '36px',
+            fontWeight: 700,
+            letterSpacing: '-0.02em',
+            color: '#1D4ED8',
+            margin: 0,
+          }}
+        >
+          FieldSync
+        </h1>
+        <p
+          style={{
+            marginTop: '8px',
+            fontSize: '11px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.25em',
+            color: '#64748B',
+          }}
+        >
           Remote Expert Platform
         </p>
       </div>
 
-      <div className="w-full max-w-xs text-center">
-        <p className="mb-6 text-xs uppercase tracking-widest text-zinc-600 font-mono">
+      <div style={{ width: '100%', maxWidth: '320px', textAlign: 'center' }}>
+        <p
+          style={{
+            marginBottom: '24px',
+            fontSize: '11px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.12em',
+            color: '#94A3B8',
+            fontFamily: 'var(--font-mono, monospace)',
+          }}
+        >
           Who are you?
         </p>
 
-        <div className="flex flex-col gap-4">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <button
             type="button"
             onClick={() => select('expert')}
-            className="group flex flex-col items-center gap-3 border border-zinc-800 bg-[#0d1b2a] p-8 transition-all hover:border-orange-500 hover:shadow-[0_0_24px_rgba(249,115,22,0.3)]"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '12px',
+              border: '1px solid #E2E8F0',
+              background: '#FFFFFF',
+              padding: '32px 24px',
+              cursor: 'pointer',
+              borderRadius: '12px',
+              transition: 'border-color 0.15s, box-shadow 0.15s',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = '#1D4ED8';
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 0 3px #DBEAFE';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = '#E2E8F0';
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)';
+            }}
           >
-            <Factory size={40} className="text-orange-500" />
-            <div className="text-base font-semibold">I&apos;m an Expert</div>
-            <div className="text-xs text-zinc-400 text-center">
-              Guide field workers remotely in live 3D sessions
+            <Factory size={40} color="#1D4ED8" />
+            <div>
+              <div style={{ fontSize: '15px', fontWeight: 600, color: '#0F172A' }}>I&apos;m an Expert</div>
+              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+                Guide field workers remotely in live 3D sessions
+              </div>
             </div>
           </button>
 
           <button
             type="button"
             onClick={() => select('worker')}
-            className="group flex flex-col items-center gap-3 border border-zinc-800 bg-[#0d1b2a] p-8 transition-all hover:border-orange-500 hover:shadow-[0_0_24px_rgba(249,115,22,0.3)]"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '12px',
+              border: '1px solid #E2E8F0',
+              background: '#FFFFFF',
+              padding: '32px 24px',
+              cursor: 'pointer',
+              borderRadius: '12px',
+              transition: 'border-color 0.15s, box-shadow 0.15s',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = '#1D4ED8';
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 0 3px #DBEAFE';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = '#E2E8F0';
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)';
+            }}
           >
-            <HardHat size={40} className="text-orange-500" />
-            <div className="text-base font-semibold">I&apos;m a Field Worker</div>
-            <div className="text-xs text-zinc-400 text-center">
-              Request live expert guidance on-site
+            <HardHat size={40} color="#1D4ED8" />
+            <div>
+              <div style={{ fontSize: '15px', fontWeight: 600, color: '#0F172A' }}>I&apos;m a Field Worker</div>
+              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+                Request live expert guidance on-site
+              </div>
             </div>
           </button>
         </div>
       </div>
 
-      <div className="text-center font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+      <div
+        style={{
+          textAlign: 'center',
+          fontFamily: 'var(--font-mono, monospace)',
+          fontSize: '10px',
+          textTransform: 'uppercase',
+          letterSpacing: '0.12em',
+          color: '#CBD5E1',
+        }}
+      >
         FieldSync MVP · Phase 2
       </div>
     </div>

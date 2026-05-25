@@ -25,7 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrains.variable} h-full antialiased`}>
-      <body className="min-h-full bg-[#0a0f1e] text-zinc-100">
+      <body className="min-h-full bg-[#F8FAFC] text-[#0F172A]">
         <Script id="matterport-analytics-rejection-guard" strategy="beforeInteractive">
           {`
             window.addEventListener('unhandledrejection', function(event) {

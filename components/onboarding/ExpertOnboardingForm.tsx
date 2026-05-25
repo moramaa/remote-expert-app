@@ -20,13 +20,14 @@ const LANGUAGE_OPTIONS = [
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  background: '#0a0f1e',
-  border: '1px solid #27272a',
-  color: '#f1f5f9',
+  background: '#F8FAFC',
+  border: '1px solid #E2E8F0',
+  color: '#0F172A',
   padding: '8px 12px',
   fontSize: '13px',
   outline: 'none',
   boxSizing: 'border-box',
+  borderRadius: '6px',
 };
 
 const labelStyle: React.CSSProperties = {
@@ -34,7 +35,7 @@ const labelStyle: React.CSSProperties = {
   fontFamily: 'var(--font-mono, monospace)',
   letterSpacing: '0.1em',
   textTransform: 'uppercase' as const,
-  color: '#64748b',
+  color: '#64748B',
   marginBottom: '6px',
   display: 'block',
 };
@@ -146,9 +147,10 @@ export default function ExpertOnboardingForm() {
                 type="button"
                 onClick={() => toggleLanguage(l.code)}
                 style={{
-                  background: active ? '#f97316' : 'transparent',
-                  color: active ? '#000' : '#94a3b8',
-                  border: `1px solid ${active ? '#f97316' : '#27272a'}`,
+                  background: active ? '#1D4ED8' : 'transparent',
+                  color: active ? '#FFFFFF' : '#64748B',
+                  border: `1px solid ${active ? '#1D4ED8' : '#E2E8F0'}`,
+                  borderRadius: '20px',
                   padding: '4px 10px',
                   fontSize: '11px',
                   cursor: 'pointer',
@@ -163,7 +165,16 @@ export default function ExpertOnboardingForm() {
 
       {/* Error */}
       {error && (
-        <div style={{ fontSize: '12px', color: '#f87171', background: '#7f1d1d30', border: '1px solid #f87171', padding: '8px 12px' }}>
+        <div
+          style={{
+            fontSize: '12px',
+            color: '#DC2626',
+            background: '#FEE2E2',
+            border: '1px solid #DC2626',
+            borderRadius: '6px',
+            padding: '8px 12px',
+          }}
+        >
           {error}
         </div>
       )}
@@ -173,9 +184,10 @@ export default function ExpertOnboardingForm() {
         type="submit"
         disabled={submitting}
         style={{
-          background: submitting ? '#64748b' : '#f97316',
-          color: '#000',
+          background: submitting ? '#64748B' : '#1D4ED8',
+          color: '#FFFFFF',
           border: 'none',
+          borderRadius: '8px',
           padding: '12px',
           fontSize: '13px',
           fontWeight: 700,

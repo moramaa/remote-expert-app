@@ -184,7 +184,7 @@ export default function MatterportViewer({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: '#0a0f1e',
+            background: '#0F172A',
             color: '#fff',
           }}
         >
@@ -194,8 +194,8 @@ export default function MatterportViewer({
                 width: '48px',
                 height: '48px',
                 borderRadius: '50%',
-                background: '#f97316',
-                boxShadow: '0 0 30px #f97316',
+                background: '#1D4ED8',
+                boxShadow: '0 0 30px #1D4ED8',
                 animation: 'mp-pulse 1.4s ease-in-out infinite',
               }}
             />
@@ -218,21 +218,21 @@ export default function MatterportViewer({
             alignItems: 'center',
             justifyContent: 'center',
             gap: '0.75rem',
-            background: '#0a0f1e',
+            background: '#0F172A',
             padding: '2rem',
             textAlign: 'center',
           }}
         >
-          <strong style={{ fontSize: '1.125rem', color: '#f97316' }}>Failed to load Matterport viewer</strong>
-          <p style={{ maxWidth: '32rem', fontSize: '0.875rem', color: '#cbd5e1' }}>{errorMsg}</p>
+          <strong style={{ fontSize: '1.125rem', color: '#DC2626' }}>Failed to load Matterport viewer</strong>
+          <p style={{ maxWidth: '32rem', fontSize: '0.875rem', color: '#CBD5E1' }}>{errorMsg}</p>
           <button
             onClick={() => window.location.reload()}
             style={{
               marginTop: '0.5rem',
-              border: '1px solid #f97316',
+              border: '1px solid #1D4ED8',
               padding: '0.5rem 1rem',
               fontSize: '0.875rem',
-              color: '#f97316',
+              color: '#1D4ED8',
               background: 'transparent',
               cursor: 'pointer',
             }}

@@ -23,8 +23,8 @@ export default function LaserPointerDot({ position }: Props) {
           width: '16px',
           height: '16px',
           borderRadius: '50%',
-          background: '#f97316',
-          boxShadow: '0 0 18px 5px rgba(249, 115, 22, 0.7)',
+          background: '#1D4ED8',
+          boxShadow: '0 0 18px 5px rgba(29, 78, 216, 0.6)',
           animation: 'wl-pulse 1.1s ease-in-out infinite',
         }}
       />

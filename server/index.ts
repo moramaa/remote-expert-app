@@ -1,6 +1,7 @@
 import { Server } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
 import { MACHINE_MAP } from '../lib/machines';
+import { prisma } from '../lib/prisma';
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -246,6 +247,17 @@ io.on('connection', (socket) => {
       expertEntry.expertName = expertName;
     }
 
+    // Persist session record to DB
+    void prisma.session.create({
+      data: {
+        id:        newSessionId,
+        ticketId:  ticketId,
+        expertId:  userId,
+        workerId:  ticket.workerId,
+        machineId: ticket.machineId,
+      },
+    }).catch((err: unknown) => console.warn('[db] session.create failed:', err));
+
     // Tell expert to navigate to the live session
     io.to(socket.id).emit('session:join', { sessionId: newSessionId, role: 'expert' });
 
@@ -306,6 +318,58 @@ io.on('connection', (socket) => {
   socket.on('expert:clear-zones', () => {
     s.zones.clear();
     socket.to(sessionId).emit('worker:clear-zones');
+  });
+
+  // ── Session lifecycle ─────────────────────────────────────────────────────
+
+  socket.on('session:end', ({ resolved }) => {
+    const isExpert = role === 'expert';
+    const now = new Date();
+
+    // Update the DB record (fire-and-forget; don't block the event loop)
+    void prisma.session.findUnique({ where: { id: sessionId } })
+      .then((existing) => {
+        if (!existing) return;
+        const durationSeconds = existing.startedAt
+          ? Math.round((now.getTime() - existing.startedAt.getTime()) / 1000)
+          : undefined;
+        return prisma.session.update({
+          where: { id: sessionId },
+          data: {
+            ...(isExpert ? { resolvedExpert: resolved } : { resolvedWorker: resolved }),
+            // Only set endedAt on the first "end" received
+            ...(!existing.endedAt ? { endedAt: now, durationSeconds } : {}),
+          },
+        });
+      })
+      .catch((err: unknown) => console.warn('[db] session.end update failed:', err));
+
+    // Notify the other party so they can show their own feedback modal
+    socket.to(sessionId).emit('session:ended', { endedBy: isExpert ? 'expert' : 'worker' });
+
+    console.log(`[session] ${role} ended session=${sessionId} resolved=${resolved}`);
+  });
+
+  // ── Worker acknowledgement events ─────────────────────────────────────────
+
+  socket.on('worker:step-done', (payload) => {
+    socket.to(sessionId).emit('expert:step-done', payload);
+  });
+
+  socket.on('worker:needs-clarification', (payload) => {
+    socket.to(sessionId).emit('expert:needs-clarification', payload);
+  });
+
+  // ── Emergency freeze ──────────────────────────────────────────────────────
+
+  socket.on('expert:emergency-freeze', () => {
+    console.log(`[emergency] expert triggered freeze on session=${sessionId}`);
+    socket.to(sessionId).emit('worker:emergency-freeze');
+  });
+
+  socket.on('worker:emergency-acknowledged', () => {
+    console.log(`[emergency] worker acknowledged on session=${sessionId}`);
+    socket.to(sessionId).emit('expert:emergency-acknowledged');
   });
 
   // ── Disconnect ────────────────────────────────────────────────────────────

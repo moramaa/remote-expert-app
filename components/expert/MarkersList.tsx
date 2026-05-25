@@ -15,44 +15,114 @@ function formatTime(ts: number): string {
 
 export default function MarkersList({ markers, onRemove, onClearAll }: Props) {
   return (
-    <div className="flex flex-col border border-zinc-800 bg-[#0d1b2a]">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
-        <div className="text-xs uppercase tracking-widest text-zinc-500">
-          Markers <span className="ml-1 text-zinc-300">({markers.length})</span>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        border: '1px solid #E2E8F0',
+        borderRadius: '8px',
+        background: '#FFFFFF',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottom: '1px solid #E2E8F0',
+          padding: '8px 12px',
+          background: '#F8FAFC',
+        }}
+      >
+        <div
+          style={{
+            fontSize: '11px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            color: '#64748B',
+            fontWeight: 700,
+          }}
+        >
+          Markers{' '}
+          <span style={{ color: '#0F172A' }}>({markers.length})</span>
         </div>
         {markers.length > 0 && (
           <button
             type="button"
             onClick={onClearAll}
-            className="flex items-center gap-1 text-xs text-zinc-400 hover:text-orange-500"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '11px',
+              color: '#64748B',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#DC2626'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#64748B'; }}
           >
             <Trash2 size={12} /> Clear
           </button>
         )}
       </div>
-      <div className="max-h-48 overflow-y-auto">
+      <div style={{ maxHeight: '192px', overflowY: 'auto' }}>
         {markers.length === 0 ? (
-          <div className="px-3 py-4 text-center text-xs text-zinc-600">
+          <div
+            style={{
+              padding: '16px 12px',
+              textAlign: 'center',
+              fontSize: '11px',
+              color: '#94A3B8',
+            }}
+          >
             No markers placed. Switch to Marker mode, hover over a surface, then press Space.
           </div>
         ) : (
           markers.map((m, idx) => (
             <div
               key={m.id}
-              className="flex items-start justify-between gap-2 border-b border-zinc-900 px-3 py-2 last:border-b-0"
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: '8px',
+                borderBottom: '1px solid #F1F5F9',
+                padding: '8px 12px',
+              }}
             >
-              <div className="flex-1 min-w-0">
-                <div className="truncate text-sm text-zinc-100">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: '13px',
+                    color: '#0F172A',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {m.label || `Marker #${idx + 1}`}
                 </div>
-                <div className="font-mono text-[10px] text-zinc-500">
+                <div style={{ fontFamily: 'monospace', fontSize: '10px', color: '#94A3B8' }}>
                   {formatTime(m.timestamp)} · x:{m.x.toFixed(2)} y:{m.y.toFixed(2)} z:{m.z.toFixed(2)}
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => onRemove(m.id)}
-                className="text-zinc-500 hover:text-orange-500"
+                style={{
+                  color: '#94A3B8',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#DC2626'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#94A3B8'; }}
                 aria-label="Remove marker"
               >
                 <X size={14} />

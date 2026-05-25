@@ -80,7 +80,6 @@ export default function WorkerDashboardPage() {
       return;
     }
 
-    // Show overlay immediately so the user sees feedback right away
     setMachineId(selectedMachineId);
     setSearching(true);
 
@@ -114,8 +113,16 @@ export default function WorkerDashboardPage() {
 
   if (profile.status === 'loading') {
     return (
-      <div style={{ minHeight: '100vh', background: '#0a0f1e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span style={{ fontSize: '12px', color: '#475569', fontFamily: 'monospace' }}>Loading…</span>
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#F8FAFC',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <span style={{ fontSize: '12px', color: '#64748B', fontFamily: 'monospace' }}>Loading…</span>
       </div>
     );
   }
@@ -124,36 +131,53 @@ export default function WorkerDashboardPage() {
   const machineName = machineId ? (MACHINE_MAP.get(machineId)?.label ?? machineId) : '';
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0a0f1e', color: '#f1f5f9', padding: '24px 16px' }}>
+    <div style={{ minHeight: '100vh', background: '#F8FAFC', color: '#0F172A', padding: '24px 16px' }}>
       <div style={{ maxWidth: '480px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
         {/* Header */}
         <div>
-          <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#f97316', margin: 0 }}>
+          <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#1D4ED8', margin: 0 }}>
             {workerProfile?.name ?? 'Worker'}
           </h1>
-          <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 0' }}>
+          <p style={{ fontSize: '11px', color: '#64748B', margin: '4px 0 0' }}>
             {workerProfile?.factory ?? ''}
           </p>
-          <p style={{ fontSize: '10px', color: '#475569', fontFamily: 'monospace', margin: '2px 0 0', letterSpacing: '0.08em' }}>
+          <p
+            style={{
+              fontSize: '10px',
+              color: '#94A3B8',
+              fontFamily: 'monospace',
+              margin: '2px 0 0',
+              letterSpacing: '0.08em',
+            }}
+          >
             ID: {userId.slice(0, 8)}… · Worker View
           </p>
         </div>
 
         {/* Offline warning */}
         {!isConnected && (
-          <div style={{ padding: '10px 14px', border: '1px solid #f97316', background: '#f9731610', fontSize: '11px', color: '#f97316', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div
+            style={{
+              padding: '10px 14px',
+              border: '1px solid #DC2626',
+              background: '#FEE2E2',
+              fontSize: '11px',
+              color: '#DC2626',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              borderRadius: '6px',
+            }}
+          >
             <AlertTriangle size={14} />
             Not connected to server — SOS unavailable
           </div>
         )}
 
-        {/* 4 main cards */}
+        {/* Dashboard cards */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          {/* SOS — the only active card */}
-          <div
-            style={{ gridColumn: '1 / -1' }}
-          >
+          <div style={{ gridColumn: '1 / -1' }}>
             <DashboardCard
               icon={<AlertTriangle size={36} />}
               title="Open SOS Call"
@@ -197,7 +221,7 @@ export default function WorkerDashboardPage() {
         />
       )}
 
-      {/* Searching overlay — shown as soon as searching starts, before ticketId arrives */}
+      {/* Searching overlay */}
       {searching && (
         <SearchingOverlay
           machineName={machineName}

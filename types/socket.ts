@@ -18,6 +18,9 @@ export interface Instruction {
   id: string;
   text: string;
   timestamp: number;
+  /** Set when this instruction is a playbook step */
+  stepNumber?: number;
+  totalSteps?: number;
 }
 
 export interface CameraState {
@@ -99,6 +102,18 @@ export interface ServerToClientEvents {
   'worker:ticket-status':   (status: { ticketId: string; state: TicketStatus; sessionId?: string; expertName?: string }) => void;
   /** Both expert + worker receive this once a match is confirmed */
   'session:join':           (payload: { sessionId: string; role: 'expert' | 'worker' }) => void;
+
+  // ── Session lifecycle ─────────────────────────────────────────────────────
+  /** Sent to the OTHER party when one side ends the session */
+  'session:ended':          (payload: { endedBy: 'expert' | 'worker' }) => void;
+
+  // ── Worker feedback to expert ─────────────────────────────────────────────
+  'expert:step-done':           (payload: { instructionId: string }) => void;
+  'expert:needs-clarification': (payload: { instructionId: string }) => void;
+
+  // ── Emergency ─────────────────────────────────────────────────────────────
+  'worker:emergency-freeze':      () => void;
+  'expert:emergency-acknowledged': () => void;
 }
 
 export interface ClientToServerEvents {
@@ -111,6 +126,18 @@ export interface ClientToServerEvents {
   'expert:camera-sync':     (camera: CameraState) => void;
   'expert:highlight-zone':  (zone: HighlightZone) => void;
   'expert:clear-zones':     () => void;
+
+  // ── Session lifecycle ─────────────────────────────────────────────────────
+  /** Either party ends the session and records outcome */
+  'session:end': (payload: { resolved: boolean }) => void;
+
+  // ── Worker feedback ───────────────────────────────────────────────────────
+  'worker:step-done':           (payload: { instructionId: string }) => void;
+  'worker:needs-clarification': (payload: { instructionId: string }) => void;
+
+  // ── Emergency ─────────────────────────────────────────────────────────────
+  'expert:emergency-freeze':      () => void;
+  'worker:emergency-acknowledged': () => void;
 
   // ── Phase 2: availability + matching ─────────────────────────────────────
   /** Expert toggles their availability; sends current cert list */

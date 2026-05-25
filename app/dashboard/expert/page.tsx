@@ -113,18 +113,24 @@ export default function ExpertDashboardPage() {
       (result) => {
         if ('error' in result) {
           setAccepting(null);
-          // Ticket gone — remove from local queue
           setQueue((prev) => prev.filter((t) => t.ticketId !== ticketId));
         }
-        // On success, session:join fires and we navigate
       },
     );
   }
 
   if (profile.status === 'loading') {
     return (
-      <div style={{ minHeight: '100vh', background: '#0a0f1e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span style={{ fontSize: '12px', color: '#475569', fontFamily: 'monospace' }}>Loading…</span>
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#F8FAFC',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <span style={{ fontSize: '12px', color: '#64748B', fontFamily: 'monospace' }}>Loading…</span>
       </div>
     );
   }
@@ -132,16 +138,32 @@ export default function ExpertDashboardPage() {
   const userId = getStoredUserId() ?? '';
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0a0f1e', color: '#f1f5f9', padding: '24px 16px' }}>
+    <div style={{ minHeight: '100vh', background: '#F8FAFC', color: '#0F172A', padding: '24px 16px' }}>
       <div style={{ maxWidth: '640px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            flexWrap: 'wrap',
+            gap: '12px',
+          }}
+        >
           <div>
-            <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#f97316', margin: 0 }}>
+            <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#1D4ED8', margin: 0 }}>
               {expertProfile?.name ?? 'Expert'}
             </h1>
-            <p style={{ fontSize: '10px', color: '#475569', fontFamily: 'monospace', margin: '4px 0 0', letterSpacing: '0.08em' }}>
+            <p
+              style={{
+                fontSize: '10px',
+                color: '#64748B',
+                fontFamily: 'monospace',
+                margin: '4px 0 0',
+                letterSpacing: '0.08em',
+              }}
+            >
               ID: {userId.slice(0, 8)}… · Expert Console
             </p>
           </div>
@@ -161,7 +183,13 @@ export default function ExpertDashboardPage() {
         />
 
         {/* Dashboard cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gap: '12px',
+          }}
+        >
           <DashboardCard
             icon={<History size={32} />}
             title="Session History"

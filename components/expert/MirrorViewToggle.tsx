@@ -7,10 +7,30 @@ interface Props {
 
 export default function MirrorViewToggle({ enabled, onChange }: Props) {
   return (
-    <div className="flex items-center justify-between border border-zinc-800 bg-[#0d1b2a] px-3 py-3">
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        border: '1px solid #E2E8F0',
+        borderRadius: '8px',
+        background: '#FFFFFF',
+        padding: '10px 12px',
+      }}
+    >
       <div>
-        <div className="text-xs uppercase tracking-widest text-zinc-500">Mirror View</div>
-        <div className="text-[11px] text-zinc-500">
+        <div
+          style={{
+            fontSize: '11px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            color: '#64748B',
+            fontWeight: 700,
+          }}
+        >
+          Mirror View
+        </div>
+        <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>
           {enabled ? 'Worker camera follows yours' : 'Worker navigates freely'}
         </div>
       </div>
@@ -19,19 +39,32 @@ export default function MirrorViewToggle({ enabled, onChange }: Props) {
         role="switch"
         aria-checked={enabled}
         onClick={() => onChange(!enabled)}
-        className="relative h-6 w-11 border transition-colors"
         style={{
-          borderColor: enabled ? '#f97316' : '#27272a',
-          background: enabled ? 'rgba(249, 115, 22, 0.15)' : '#0a0f1e',
-          boxShadow: enabled ? '0 0 8px rgba(249, 115, 22, 0.5)' : 'none',
+          position: 'relative',
+          width: '44px',
+          height: '24px',
+          border: '1px solid',
+          borderRadius: '12px',
+          borderColor: enabled ? '#1D4ED8' : '#E2E8F0',
+          background: enabled ? '#DBEAFE' : '#F1F5F9',
+          boxShadow: enabled ? '0 0 0 3px #DBEAFE' : 'none',
+          cursor: 'pointer',
+          padding: 0,
+          transition: 'all 0.2s',
+          flexShrink: 0,
         }}
       >
         <span
-          className="absolute top-[2px] block h-4 w-4 transition-transform"
           style={{
-            background: enabled ? '#f97316' : '#52525b',
-            transform: enabled ? 'translateX(22px)' : 'translateX(2px)',
-            boxShadow: enabled ? '0 0 8px #f97316' : 'none',
+            position: 'absolute',
+            top: '3px',
+            width: '16px',
+            height: '16px',
+            borderRadius: '50%',
+            background: enabled ? '#1D4ED8' : '#CBD5E1',
+            transform: enabled ? 'translateX(22px)' : 'translateX(3px)',
+            transition: 'transform 0.2s, background 0.2s',
+            display: 'block',
           }}
         />
       </button>

@@ -10,17 +10,36 @@ interface Props {
 }
 
 const MODES: ReadonlyArray<{ id: ExpertMode; label: string; Icon: typeof MapPin }> = [
-  { id: 'marker', label: 'Marker', Icon: MapPin },
-  { id: 'laser', label: 'Laser', Icon: Zap },
+  { id: 'marker',    label: 'Marker',    Icon: MapPin },
+  { id: 'laser',     label: 'Laser',     Icon: Zap },
   { id: 'highlight', label: 'Highlight', Icon: Square },
-  { id: 'navigate', label: 'Navigate', Icon: Move },
+  { id: 'navigate',  label: 'Navigate',  Icon: Move },
 ];
 
 export default function ModeSelector({ mode, onChange }: Props) {
   return (
-    <div className="border border-zinc-800 bg-[#0d1b2a] p-3">
-      <div className="mb-2 text-xs uppercase tracking-widest text-zinc-500">Mode</div>
-      <div className="grid grid-cols-4 gap-2">
+    <div
+      style={{
+        border: '1px solid #E2E8F0',
+        borderRadius: '8px',
+        background: '#FFFFFF',
+        padding: '10px 12px',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          marginBottom: '8px',
+          fontSize: '11px',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: '#64748B',
+          fontWeight: 700,
+        }}
+      >
+        Mode
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
         {MODES.map(({ id, label, Icon }) => {
           const active = id === mode;
           return (
@@ -28,15 +47,25 @@ export default function ModeSelector({ mode, onChange }: Props) {
               key={id}
               type="button"
               onClick={() => onChange(id)}
-              className="flex flex-col items-center justify-center gap-1 border px-2 py-3 text-xs transition-colors"
               style={{
-                borderColor: active ? '#f97316' : '#27272a',
-                background: active ? 'rgba(249, 115, 22, 0.08)' : 'transparent',
-                color: active ? '#f97316' : '#94a3b8',
-                boxShadow: active ? '0 0 12px rgba(249, 115, 22, 0.4)' : 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                border: `1px solid ${active ? '#1D4ED8' : '#E2E8F0'}`,
+                borderRadius: '6px',
+                padding: '8px 4px',
+                fontSize: '10px',
+                background: active ? '#DBEAFE' : '#F8FAFC',
+                color: active ? '#1D4ED8' : '#64748B',
+                boxShadow: active ? '0 0 0 2px #BFDBFE' : 'none',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                fontWeight: active ? 700 : 400,
               }}
             >
-              <Icon size={20} />
+              <Icon size={18} />
               <span>{label}</span>
             </button>
           );

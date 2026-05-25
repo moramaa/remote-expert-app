@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Factory, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Factory, Trash2, Bell } from 'lucide-react';
 import MatterportViewer from '@/components/MatterportViewer';
 import ModeSelector, { type ExpertMode } from '@/components/expert/ModeSelector';
 import MarkersList from '@/components/expert/MarkersList';
@@ -10,9 +11,14 @@ import MirrorViewToggle from '@/components/expert/MirrorViewToggle';
 import LaserOverlay from '@/components/expert/LaserOverlay';
 import HighlightZoneDrawer from '@/components/expert/HighlightZoneDrawer';
 import MarkerLabelDialog from '@/components/expert/MarkerLabelDialog';
+import EmergencyFreezeButton from '@/components/expert/EmergencyFreezeButton';
+import PlaybookSelector from '@/components/expert/PlaybookSelector';
 import ConnectionStatus from '@/components/shared/ConnectionStatus';
 import StatusBar from '@/components/shared/StatusBar';
+import EndSessionButton from '@/components/shared/EndSessionButton';
+import SessionFeedbackModal from '@/components/shared/SessionFeedbackModal';
 import { useSocket } from '@/hooks/useSocket';
+import { getStoredRole, getStoredSessionId } from '@/lib/identity';
 import type {
   CameraState,
   HighlightZone,
@@ -20,8 +26,8 @@ import type {
   Marker,
 } from '@/types/socket';
 
-const STEM_SCALE = 0.3; // stem height in metres
-const TAG_COLOR  = { r: 0.976, g: 0.451, b: 0.086 }; // orange (#f97316)
+const STEM_SCALE = 0.3;
+const TAG_COLOR  = { r: 0.976, g: 0.451, b: 0.086 };
 
 function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -29,6 +35,7 @@ function uid(): string {
 
 export default function ExpertPage() {
   const { socket, isConnected, connectionCount } = useSocket();
+  const router = useRouter();
 
   const [mode, setMode] = useState<ExpertMode>('navigate');
   const [markers, setMarkers] = useState<Marker[]>([]);
@@ -38,43 +45,83 @@ export default function ExpertPage() {
   const [viewerReady, setViewerReady] = useState(false);
   const [mpSdk, setMpSdk] = useState<MatterportSdk | null>(null);
   const [laser, setLaser] = useState<{ x: number; y: number } | null>(null);
-  /**
-   * Set when the user presses Spacebar in marker mode.
-   * Drives the MarkerLabelDialog — the intersection is read from lastIntersectionRef
-   * and finalised when the user submits the dialog.
-   */
   const [pendingIntersection, setPendingIntersection] = useState<MatterportIntersection | null>(null);
   const [lastAction, setLastAction] = useState('');
+  const [emergencyAcknowledged, setEmergencyAcknowledged] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // Notification banners for worker responses
+  const [notification, setNotification] = useState<{ text: string; color: string } | null>(null);
 
   const viewerWrapperRef = useRef<HTMLDivElement>(null);
   const lastLaserEmitRef = useRef<number>(0);
-  /**
-   * Always-current Pointer.intersection from the SDK.
-   * Updated by onIntersectionChange (no click overlay — events reach the iframe
-   * so raycasting stays live as the cursor moves over the 3D model).
-   */
   const lastIntersectionRef = useRef<MatterportIntersection | null>(null);
   const mpSdkRef = useRef<MatterportSdk | null>(null);
 
-  // Keep refs in sync with state
   useEffect(() => { mpSdkRef.current = mpSdk; }, [mpSdk]);
+
+  // Auto-dismiss notification after 4s
+  useEffect(() => {
+    if (!notification) return;
+    const t = setTimeout(() => setNotification(null), 4000);
+    return () => clearTimeout(t);
+  }, [notification]);
+
+  // ── Socket listeners for new events ────────────────────────────────────────
+  useEffect(() => {
+    if (!socket) return;
+
+    const onStepDone = ({ instructionId }: { instructionId: string }) => {
+      const ins = sentInstructions.find((i) => i.id === instructionId);
+      const label = ins?.text.slice(0, 40) ?? 'step';
+      setNotification({ text: `✓ Worker marked done: "${label}…"`, color: '#16A34A' });
+      setLastAction('Worker: step done');
+    };
+
+    const onNeedsClarification = ({ instructionId }: { instructionId: string }) => {
+      const ins = sentInstructions.find((i) => i.id === instructionId);
+      const label = ins?.text.slice(0, 40) ?? 'step';
+      setNotification({ text: `❓ Worker needs clarification: "${label}…"`, color: '#D97706' });
+      setLastAction('Worker: needs clarification');
+    };
+
+    const onEmergencyAcknowledged = () => {
+      setEmergencyAcknowledged(true);
+      setNotification({ text: '✓ Worker confirmed machine stop', color: '#16A34A' });
+      setLastAction('Emergency acknowledged by worker');
+    };
+
+    const onSessionEnded = () => {
+      // Peer ended the session — show our own feedback modal
+      setFeedbackOpen(true);
+    };
+
+    socket.on('expert:step-done', onStepDone);
+    socket.on('expert:needs-clarification', onNeedsClarification);
+    socket.on('expert:emergency-acknowledged', onEmergencyAcknowledged);
+    socket.on('session:ended', onSessionEnded);
+
+    return () => {
+      socket.off('expert:step-done', onStepDone);
+      socket.off('expert:needs-clarification', onNeedsClarification);
+      socket.off('expert:emergency-acknowledged', onEmergencyAcknowledged);
+      socket.off('session:ended', onSessionEnded);
+    };
+  }, [socket, sentInstructions]);
 
   // ----- Intersection tracking -----
   const handleIntersectionChange = useCallback((i: MatterportIntersection | null) => {
     lastIntersectionRef.current = i;
   }, []);
 
-  // ----- Spacebar → open label dialog for marker placement -----
+  // ----- Spacebar → place marker -----
   useEffect(() => {
     if (mode !== 'marker') return;
     const handler = (e: KeyboardEvent) => {
       if (e.code !== 'Space') return;
-      // Prevent the SDK from consuming the space bar for its own navigation
       e.preventDefault();
       e.stopPropagation();
       const i = lastIntersectionRef.current;
       if (!i) return;
-      // Skip if cursor is hovering on empty air (no model surface under cursor)
       if (i.object === 'intersectedobject.none') return;
       setPendingIntersection(i);
     };
@@ -82,13 +129,7 @@ export default function ExpertPage() {
     return () => window.removeEventListener('keydown', handler, { capture: true });
   }, [mode]);
 
-  // ----- Marker handling -----
-
-  /**
-   * Called when the user submits (or skips) the label dialog.
-   * Places a native SDK Tag at the pending intersection's exact 3D position
-   * with a stem oriented along the surface normal.
-   */
+  // ----- Marker placement -----
   const handleLabelSubmit = useCallback(
     async (label: string) => {
       const intersection = pendingIntersection;
@@ -150,10 +191,12 @@ export default function ExpertPage() {
     setLastAction('Markers cleared');
   }, [markers, socket]);
 
-  // ----- Instructions -----
+  // ----- Instructions (also used by PlaybookSelector) -----
   const sendInstruction = useCallback(
-    (text: string) => {
-      const ins: Instruction = { id: uid(), text, timestamp: Date.now() };
+    (instruction: Instruction | string) => {
+      const ins: Instruction = typeof instruction === 'string'
+        ? { id: uid(), text: instruction, timestamp: Date.now() }
+        : instruction;
       setSentInstructions((prev) => [ins, ...prev].slice(0, 20));
       socket?.emit('expert:send-instruction', ins);
       setLastAction('Instruction sent');
@@ -181,14 +224,12 @@ export default function ExpertPage() {
   // ----- Camera sync -----
   const handleCameraMove = useCallback(
     (camera: CameraState) => {
-      if (mirrorView) {
-        socket?.emit('expert:camera-sync', camera);
-      }
+      if (mirrorView) socket?.emit('expert:camera-sync', camera);
     },
     [mirrorView, socket],
   );
 
-  // ----- Laser pointer tracking -----
+  // ----- Laser -----
   const handleViewerMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (mode !== 'laser') return;
@@ -218,13 +259,34 @@ export default function ExpertPage() {
         setLaser(null);
         socket?.emit('expert:laser-pointer', null);
       }
-      // Dismiss any pending label dialog when leaving marker mode
       if (mode === 'marker' && nextMode !== 'marker') {
         setPendingIntersection(null);
       }
       setMode(nextMode);
     },
     [mode, socket],
+  );
+
+  // ----- Emergency -----
+  const handleEmergencyFreeze = useCallback(() => {
+    socket?.emit('expert:emergency-freeze');
+    setLastAction('Emergency freeze sent');
+    setEmergencyAcknowledged(false);
+  }, [socket]);
+
+  // ----- Session end -----
+  const handleEndSession = useCallback(() => {
+    setFeedbackOpen(true);
+  }, []);
+
+  const handleFeedbackAnswer = useCallback(
+    (resolved: boolean) => {
+      socket?.emit('session:end', { resolved });
+      setFeedbackOpen(false);
+      const role = getStoredRole();
+      router.push(role === 'expert' ? '/dashboard/expert' : '/dashboard/worker');
+    },
+    [socket, router],
   );
 
   // ----- Clear All -----
@@ -246,41 +308,80 @@ export default function ExpertPage() {
     [markers, zones],
   );
 
-  // Crosshair cursor style in marker mode
-  const viewerWrapperStyle: React.CSSProperties = {
-    cursor: mode === 'marker' ? 'crosshair' : 'default',
-  };
+  const sessionId = getStoredSessionId();
 
   return (
-    <div className="flex h-screen flex-col bg-[#0a0f1e] text-zinc-100">
+    <div style={{ display: 'flex', height: '100vh', flexDirection: 'column', background: '#F8FAFC', color: '#0F172A' }}>
       {/* Header */}
-      <header className="flex items-center justify-between border-b border-zinc-800 bg-[#0d1b2a] px-6 py-3">
-        <div className="flex items-center gap-3">
-          <Factory size={22} className="text-orange-500" />
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottom: '1px solid #E2E8F0',
+          background: '#FFFFFF',
+          padding: '10px 20px',
+          gap: '12px',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Factory size={22} color="#1D4ED8" />
           <div>
-            <div className="text-sm font-semibold tracking-wide">FieldSync Expert Console</div>
-            <div className="text-[10px] uppercase tracking-widest text-zinc-500">
+            <div style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', letterSpacing: '0.02em' }}>
+              FieldSync Expert Console
+            </div>
+            <div style={{ fontSize: '10px', color: '#94A3B8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
               Space: RXLkh8vriYF
             </div>
           </div>
         </div>
-        <ConnectionStatus
-          socketConnected={isConnected}
-          viewerReady={viewerReady}
-          connectionCount={connectionCount}
-          role="expert"
-        />
+
+        {/* Notification banner */}
+        {notification && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 14px',
+              borderRadius: '6px',
+              background: notification.color + '18',
+              border: `1px solid ${notification.color}40`,
+              color: notification.color,
+              fontSize: '12px',
+              fontWeight: 600,
+            }}
+          >
+            <Bell size={12} />
+            {notification.text}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <EndSessionButton onEndSession={handleEndSession} />
+          <ConnectionStatus
+            socketConnected={isConnected}
+            viewerReady={viewerReady}
+            connectionCount={connectionCount}
+            role="expert"
+          />
+        </div>
       </header>
 
       {/* Main */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Viewer area */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        {/* Viewer */}
         <div
           ref={viewerWrapperRef}
           onMouseMove={handleViewerMouseMove}
           onMouseLeave={handleViewerMouseLeave}
-          className="relative flex-1 bg-black"
-          style={viewerWrapperStyle}
+          style={{
+            position: 'relative',
+            flex: 1,
+            background: '#000',
+            cursor: mode === 'marker' ? 'crosshair' : 'default',
+          }}
         >
           <MatterportViewer
             isReadOnly={false}
@@ -290,7 +391,6 @@ export default function ExpertPage() {
           >
             <HighlightZoneDrawer active={mode === 'highlight'} zones={zones} onComplete={addZone} />
             <LaserOverlay position={laser} />
-            {/* Label dialog — centred in the viewer, triggered by Spacebar */}
             <MarkerLabelDialog
               key={pendingIntersection ? 'open' : 'closed'}
               position={pendingIntersection ? { x: 50, y: 40 } : null}
@@ -299,7 +399,6 @@ export default function ExpertPage() {
             />
           </MatterportViewer>
 
-          {/* Marker mode hint banner */}
           {mode === 'marker' && viewerReady && (
             <div
               style={{
@@ -307,13 +406,13 @@ export default function ExpertPage() {
                 bottom: '12px',
                 left: '50%',
                 transform: 'translateX(-50%)',
-                background: 'rgba(13, 27, 42, 0.9)',
-                border: '1px solid #f97316',
-                color: '#f97316',
+                background: 'rgba(255,255,255,0.92)',
+                border: '1px solid #1D4ED8',
+                color: '#1D4ED8',
                 fontSize: '11px',
                 padding: '6px 14px',
-                fontFamily: 'monospace',
-                letterSpacing: '0.06em',
+                borderRadius: '6px',
+                fontWeight: 600,
                 zIndex: 10,
                 whiteSpace: 'nowrap',
                 pointerEvents: 'none',
@@ -325,35 +424,54 @@ export default function ExpertPage() {
         </div>
 
         {/* Control panel */}
-        <aside className="flex w-[360px] flex-col gap-3 overflow-y-auto border-l border-zinc-800 bg-[#0a0f1e] p-3">
+        <aside
+          style={{
+            width: '360px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            overflowY: 'auto',
+            borderLeft: '1px solid #E2E8F0',
+            background: '#F8FAFC',
+            padding: '12px',
+          }}
+        >
           <ModeSelector mode={mode} onChange={handleModeChange} />
+          <PlaybookSelector onSendStep={sendInstruction} />
+          <InstructionInput recent={sentInstructions} onSend={(text) => sendInstruction(text)} />
           <MarkersList markers={markers} onRemove={removeMarker} onClearAll={clearMarkers} />
-          <InstructionInput recent={sentInstructions} onSend={sendInstruction} />
           <MirrorViewToggle enabled={mirrorView} onChange={setMirrorView} />
+          <EmergencyFreezeButton onFreeze={handleEmergencyFreeze} acknowledged={emergencyAcknowledged} />
 
           {/* Clear controls */}
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={clearMarkers}
-              className="flex items-center justify-center gap-1 border border-zinc-800 px-2 py-2 text-xs text-zinc-400 hover:border-orange-500 hover:text-orange-500"
-            >
-              <Trash2 size={12} /> Markers
-            </button>
-            <button
-              type="button"
-              onClick={clearZones}
-              className="flex items-center justify-center gap-1 border border-zinc-800 px-2 py-2 text-xs text-zinc-400 hover:border-orange-500 hover:text-orange-500"
-            >
-              <Trash2 size={12} /> Zones
-            </button>
-            <button
-              type="button"
-              onClick={clearAll}
-              className="flex items-center justify-center gap-1 border border-orange-500/50 px-2 py-2 text-xs text-orange-500 hover:bg-orange-500 hover:text-black"
-            >
-              <Trash2 size={12} /> All
-            </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+            {[
+              { label: 'Markers', onClick: clearMarkers },
+              { label: 'Zones', onClick: clearZones },
+              { label: 'All', onClick: clearAll, danger: true },
+            ].map(({ label, onClick, danger }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={onClick}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  border: `1px solid ${danger ? '#DC262660' : '#E2E8F0'}`,
+                  background: 'transparent',
+                  color: danger ? '#DC2626' : '#64748B',
+                  borderRadius: '6px',
+                  padding: '8px',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                }}
+              >
+                <Trash2 size={11} />
+                {label}
+              </button>
+            ))}
           </div>
         </aside>
       </div>
@@ -364,6 +482,9 @@ export default function ExpertPage() {
         zoneCount={headerInfo.zoneCount}
         lastAction={lastAction}
       />
+
+      {/* Session feedback modal */}
+      <SessionFeedbackModal open={feedbackOpen} onAnswer={handleFeedbackAnswer} />
     </div>
   );
 }

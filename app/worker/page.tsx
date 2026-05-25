@@ -1,17 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { HardHat } from 'lucide-react';
 import MatterportViewer from '@/components/MatterportViewer';
 import LaserPointerDot from '@/components/worker/LaserPointerDot';
-import InstructionBanner from '@/components/worker/InstructionBanner';
-import ActivityFeed, { type ActivityEntry } from '@/components/worker/ActivityFeed';
+import ActiveStepCard from '@/components/worker/ActiveStepCard';
 import WorkerZonesOverlay from '@/components/worker/WorkerZonesOverlay';
+import EmergencyFreezeOverlay from '@/components/worker/EmergencyFreezeOverlay';
 import ConnectionStatus from '@/components/shared/ConnectionStatus';
+import EndSessionButton from '@/components/shared/EndSessionButton';
+import SessionFeedbackModal from '@/components/shared/SessionFeedbackModal';
 import { useSocket } from '@/hooks/useSocket';
 import type { CameraState, HighlightZone, Instruction, LaserPointer, Marker, SyncState } from '@/types/socket';
 
-const TAG_COLOR = { r: 0.976, g: 0.451, b: 0.086 }; // orange (#f97316)
+const TAG_COLOR = { r: 0.114, g: 0.306, b: 0.847 }; // brand blue #1D4ED8
 const STEM_SCALE = 0.3;
 
 function uid(): string {
@@ -19,6 +22,7 @@ function uid(): string {
 }
 
 export default function WorkerPage() {
+  const router = useRouter();
   const { socket, isConnected, connectionCount } = useSocket();
 
   const [viewerReady, setViewerReady] = useState(false);
@@ -26,8 +30,9 @@ export default function WorkerPage() {
   const [zones, setZones] = useState<HighlightZone[]>([]);
   const [laser, setLaser] = useState<LaserPointer | null>(null);
   const [activeInstruction, setActiveInstruction] = useState<Instruction | null>(null);
-  const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [syncedCamera, setSyncedCamera] = useState<CameraState | null>(null);
+  const [emergencyActive, setEmergencyActive] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   /**
    * Ref-based SDK handle so socket callbacks always see the latest SDK
@@ -47,10 +52,6 @@ export default function WorkerPage() {
    * Used by the sync useEffect so we don't double-add tags.
    */
   const syncedIdsRef = useRef(new Set<string>());
-
-  const pushActivity = useCallback((kind: ActivityEntry['kind'], text: string) => {
-    setActivity((prev) => [{ id: uid(), kind, text, timestamp: Date.now() }, ...prev].slice(0, 50));
-  }, []);
 
   /**
    * Add a native Matterport Tag for a marker.
@@ -98,7 +99,6 @@ export default function WorkerPage() {
         return [...prev, m];
       });
       void addSdkTag(m);
-      pushActivity('marker', `Marker placed${m.label ? `: "${m.label}"` : ''}`);
     };
 
     const onRemoveMarker = async (id: string) => {
@@ -107,7 +107,6 @@ export default function WorkerPage() {
       tagIdMapRef.current.delete(id);
       syncedIdsRef.current.delete(id);
       setMarkers((prev) => prev.filter((m) => m.id !== id));
-      pushActivity('clear', 'Marker removed');
     };
 
     const onClearMarkers = async () => {
@@ -118,26 +117,26 @@ export default function WorkerPage() {
       tagIdMapRef.current.clear();
       syncedIdsRef.current.clear();
       setMarkers([]);
-      pushActivity('clear', 'Markers cleared');
     };
 
     const onInstruction = (ins: Instruction) => {
       setActiveInstruction(ins);
-      pushActivity('instruction', `Instruction: "${ins.text}"`);
     };
+
     const onLaser = (pos: LaserPointer | null) => {
       setLaser(pos);
     };
+
     const onCamera = (cam: CameraState) => {
       setSyncedCamera(cam);
     };
+
     const onZone = (z: HighlightZone) => {
       setZones((prev) => [...prev, z]);
-      pushActivity('zone', `Highlight zone${z.label ? `: "${z.label}"` : ' added'}`);
     };
+
     const onClearZones = () => {
       setZones([]);
-      pushActivity('clear', 'Zones cleared');
     };
 
     const onSync = async (state: SyncState) => {
@@ -153,65 +152,148 @@ export default function WorkerPage() {
       setZones(state.zones);
       if (state.latestInstruction) setActiveInstruction(state.latestInstruction);
       if (state.camera) setSyncedCamera(state.camera);
-      pushActivity('marker', `Synced: ${state.markers.length} marker(s), ${state.zones.length} zone(s)`);
       // Tags are added by the markers-sync useEffect after state update
     };
 
-    socket.on('worker:sync-state',    onSync);
-    socket.on('worker:new-marker',    onMarker);
-    socket.on('worker:remove-marker', onRemoveMarker);
-    socket.on('worker:clear-markers', onClearMarkers);
-    socket.on('worker:instruction',   onInstruction);
-    socket.on('worker:laser-pointer', onLaser);
-    socket.on('worker:camera-sync',   onCamera);
+    const onEmergencyFreeze = () => {
+      setEmergencyActive(true);
+    };
+
+    const onSessionEnded = () => {
+      setFeedbackOpen(true);
+    };
+
+    socket.on('worker:sync-state',     onSync);
+    socket.on('worker:new-marker',     onMarker);
+    socket.on('worker:remove-marker',  onRemoveMarker);
+    socket.on('worker:clear-markers',  onClearMarkers);
+    socket.on('worker:instruction',    onInstruction);
+    socket.on('worker:laser-pointer',  onLaser);
+    socket.on('worker:camera-sync',    onCamera);
     socket.on('worker:highlight-zone', onZone);
-    socket.on('worker:clear-zones',   onClearZones);
+    socket.on('worker:clear-zones',    onClearZones);
+    socket.on('worker:emergency-freeze', onEmergencyFreeze);
+    socket.on('session:ended',         onSessionEnded);
 
     return () => {
-      socket.off('worker:sync-state',    onSync);
-      socket.off('worker:new-marker',    onMarker);
-      socket.off('worker:remove-marker', onRemoveMarker);
-      socket.off('worker:clear-markers', onClearMarkers);
-      socket.off('worker:instruction',   onInstruction);
-      socket.off('worker:laser-pointer', onLaser);
-      socket.off('worker:camera-sync',   onCamera);
+      socket.off('worker:sync-state',     onSync);
+      socket.off('worker:new-marker',     onMarker);
+      socket.off('worker:remove-marker',  onRemoveMarker);
+      socket.off('worker:clear-markers',  onClearMarkers);
+      socket.off('worker:instruction',    onInstruction);
+      socket.off('worker:laser-pointer',  onLaser);
+      socket.off('worker:camera-sync',    onCamera);
       socket.off('worker:highlight-zone', onZone);
-      socket.off('worker:clear-zones',   onClearZones);
+      socket.off('worker:clear-zones',    onClearZones);
+      socket.off('worker:emergency-freeze', onEmergencyFreeze);
+      socket.off('session:ended',         onSessionEnded);
     };
-  }, [socket, pushActivity, addSdkTag]);
+  }, [socket, addSdkTag]);
+
+  const handleStepDone = useCallback((instructionId: string) => {
+    socket?.emit('worker:step-done', { instructionId });
+    setActiveInstruction(null);
+  }, [socket]);
+
+  const handleClarification = useCallback((instructionId: string) => {
+    socket?.emit('worker:needs-clarification', { instructionId });
+  }, [socket]);
+
+  const handleEmergencyAcknowledge = useCallback(() => {
+    socket?.emit('worker:emergency-acknowledged');
+    setEmergencyActive(false);
+  }, [socket]);
+
+  const handleEndSession = useCallback(() => {
+    setFeedbackOpen(true);
+  }, []);
+
+  const handleFeedbackAnswer = useCallback((resolved: boolean) => {
+    socket?.emit('session:end', { resolved });
+    setFeedbackOpen(false);
+    router.push('/dashboard/worker');
+  }, [socket, router]);
 
   return (
-    <div className="flex min-h-screen items-stretch justify-center bg-[#020617] py-4">
-      <div className="flex w-full max-w-[430px] flex-col border border-zinc-800 bg-[#0a0f1e] text-zinc-100 shadow-2xl">
+    <div
+      style={{
+        display: 'flex',
+        minHeight: '100vh',
+        alignItems: 'stretch',
+        justifyContent: 'center',
+        background: '#F8FAFC',
+        padding: '16px 0',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          width: '100%',
+          maxWidth: '430px',
+          border: '1px solid #E2E8F0',
+          background: '#FFFFFF',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
+          borderRadius: '12px',
+          overflow: 'hidden',
+        }}
+      >
         {/* Header */}
-        <header className="flex items-center justify-between border-b border-zinc-800 bg-[#0d1b2a] px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            <HardHat size={18} className="text-orange-500" />
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: '1px solid #E2E8F0',
+            background: '#F8FAFC',
+            padding: '10px 12px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <HardHat size={18} color="#1D4ED8" />
             <div>
-              <div className="text-xs font-semibold tracking-wide">FieldSync Worker</div>
-              <div className="text-[9px] uppercase tracking-widest text-zinc-500">
+              <div
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  letterSpacing: '0.04em',
+                  color: '#0F172A',
+                }}
+              >
+                FieldSync Worker
+              </div>
+              <div
+                style={{
+                  fontSize: '9px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.12em',
+                  color: '#94A3B8',
+                }}
+              >
                 On-Site
               </div>
             </div>
           </div>
-          <ConnectionStatus
-            socketConnected={isConnected}
-            viewerReady={viewerReady}
-            connectionCount={connectionCount}
-            role="worker"
-          />
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ConnectionStatus
+              socketConnected={isConnected}
+              viewerReady={viewerReady}
+              connectionCount={connectionCount}
+              role="worker"
+            />
+            <EndSessionButton onEndSession={handleEndSession} />
+          </div>
         </header>
 
-        {/* Viewer (read-only, ~50% of vertical height) */}
-        <div className="relative h-[50vh] min-h-[320px] bg-black">
+        {/* Viewer (read-only) */}
+        <div style={{ position: 'relative', height: '50vh', minHeight: '280px', background: '#000' }}>
           <MatterportViewer
             isReadOnly
             onSdkReady={(sdk) => {
               mpSdkRef.current = sdk;
               setViewerReady(true);
-              // Any markers that arrived before the SDK was ready are picked
-              // up by the markers-sync useEffect (triggered by state update below).
-              setMarkers((prev) => [...prev]); // shallow-copy to trigger useEffect
+              setMarkers((prev) => [...prev]); // trigger sync useEffect
             }}
             syncedCamera={syncedCamera}
           >
@@ -220,15 +302,27 @@ export default function WorkerPage() {
           </MatterportViewer>
         </div>
 
-        {/* Instruction Banner */}
-        <InstructionBanner
-          instruction={activeInstruction}
-          onDismiss={() => setActiveInstruction(null)}
-        />
-
-        {/* Activity Feed */}
-        <ActivityFeed entries={activity} />
+        {/* Active Step Card — replaces InstructionBanner + ActivityFeed */}
+        <div style={{ flex: 1, padding: '12px', background: '#F8FAFC' }}>
+          <ActiveStepCard
+            instruction={activeInstruction}
+            onDone={handleStepDone}
+            onClarification={handleClarification}
+          />
+        </div>
       </div>
+
+      {/* Emergency overlay — full screen, blocks all interaction */}
+      <EmergencyFreezeOverlay
+        visible={emergencyActive}
+        onAcknowledge={handleEmergencyAcknowledge}
+      />
+
+      {/* Session outcome modal */}
+      <SessionFeedbackModal
+        open={feedbackOpen}
+        onAnswer={handleFeedbackAnswer}
+      />
     </div>
   );
 }

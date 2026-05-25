@@ -10,8 +10,9 @@ export default function ComingSoonBadge() {
         fontFamily: 'var(--font-mono, monospace)',
         letterSpacing: '0.15em',
         textTransform: 'uppercase',
-        color: '#f97316',
-        border: '1px solid #f97316',
+        color: '#1D4ED8',
+        border: '1px solid #1D4ED8',
+        borderRadius: '20px',
         opacity: 0.7,
       }}
     >
