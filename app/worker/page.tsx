@@ -15,7 +15,7 @@ import ConnectionStatus from '@/components/shared/ConnectionStatus';
 import EndSessionButton from '@/components/shared/EndSessionButton';
 import SessionFeedbackModal from '@/components/shared/SessionFeedbackModal';
 import { useSocket } from '@/hooks/useSocket';
-import { getStoredUserId } from '@/lib/identity';
+import { getStoredUserId, getStoredSessionId } from '@/lib/identity';
 import type {
   CameraState,
   HighlightZone,
@@ -250,15 +250,20 @@ function WorkerPageInner() {
 
   const handleFeedbackAnswer = useCallback((resolved: boolean) => {
     socket?.emit('session:end', { resolved });
+    // Modal stays open to show recording confirmation — navigation happens via onDone
+  }, [socket]);
+
+  const handleFeedbackDone = useCallback(() => {
     setFeedbackOpen(false);
     router.push('/dashboard/worker');
-  }, [socket, router]);
+  }, [router]);
 
   const handlePttChunk = useCallback((chunk: PttChunk) => {
     socket?.emit('worker:ptt-chunk', chunk);
   }, [socket]);
 
-  const userId = getStoredUserId() ?? '';
+  const userId    = getStoredUserId() ?? '';
+  const sessionId = getStoredSessionId();
 
   // ── Preview mode banner ───────────────────────────────────────────────────
   const PreviewBanner = previewData ? (
@@ -491,7 +496,13 @@ function WorkerPageInner() {
 
       {/* Session outcome modal */}
       {!isPreview && (
-        <SessionFeedbackModal open={feedbackOpen} onAnswer={handleFeedbackAnswer} />
+        <SessionFeedbackModal
+          open={feedbackOpen}
+          sessionId={sessionId}
+          onAnswer={handleFeedbackAnswer}
+          onDone={handleFeedbackDone}
+          onViewHistory={() => { setFeedbackOpen(false); router.push('/dashboard/worker/history'); }}
+        />
       )}
     </div>
   );

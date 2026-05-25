@@ -344,12 +344,16 @@ export default function ExpertPage() {
   const handleFeedbackAnswer = useCallback(
     (resolved: boolean) => {
       socket?.emit('session:end', { resolved });
-      setFeedbackOpen(false);
-      const role = getStoredRole();
-      router.push(role === 'expert' ? '/dashboard/expert' : '/dashboard/worker');
+      // Modal stays open to show recording confirmation — navigation happens via onDone
     },
-    [socket, router],
+    [socket],
   );
+
+  const handleFeedbackDone = useCallback(() => {
+    setFeedbackOpen(false);
+    const role = getStoredRole();
+    router.push(role === 'expert' ? '/dashboard/expert' : '/dashboard/worker');
+  }, [router]);
 
   // ----- Clear All -----
   const clearAll = useCallback(async () => {
@@ -588,7 +592,13 @@ export default function ExpertPage() {
       />
 
       {/* Session feedback modal */}
-      <SessionFeedbackModal open={feedbackOpen} onAnswer={handleFeedbackAnswer} />
+      <SessionFeedbackModal
+        open={feedbackOpen}
+        sessionId={sessionId}
+        onAnswer={handleFeedbackAnswer}
+        onDone={handleFeedbackDone}
+        onViewHistory={handleFeedbackDone}
+      />
     </div>
   );
 }
