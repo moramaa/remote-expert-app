@@ -1,6 +1,7 @@
 import { type NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { MACHINE_MAP } from '@/lib/machines';
+import type { Marker, Instruction, PttChunk } from '@/types/socket';
 
 export interface WorkerSessionDTO {
   sessionId:       string;
@@ -12,15 +13,28 @@ export interface WorkerSessionDTO {
   resolvedExpert:  boolean | null;
   resolvedWorker:  boolean | null;
   safetyTriggered: boolean;
-  hasMarkers:      boolean;
+
+  // ── Captured session content (regardless of AI status) ────────────────────
+  locationDept:    string | null;
+  locationLine:    string | null;
+  locationStation: string | null;
+  markers:         Array<{ id: string; label: string }>;
+  instructions:    Array<{ id: string; text: string; timestamp: number }>;
+  pttCount:        number;        // number of voice chunks recorded
+}
+
+function safeParseArray<T>(json: string | null): T[] {
+  if (!json) return [];
+  try { return JSON.parse(json) as T[]; } catch { return []; }
 }
 
 /**
  * GET /api/sessions/worker-history?workerId=...&limit=20
  *
- * Returns ALL ended sessions for a given worker, sorted by most-recent first.
- * Used by the worker's "Call History" page — shows every past session
- * regardless of whether an AI summary was generated.
+ * Returns ALL ended sessions for a given worker, sorted newest-first.
+ * Each entry includes the FULL captured content — markers, instructions,
+ * location, and PTT count — even when the AI summary failed or is missing.
+ * This guarantees the worker always sees their session data.
  */
 export async function GET(req: NextRequest): Promise<Response> {
   const workerId = req.nextUrl.searchParams.get('workerId');
@@ -40,32 +54,31 @@ export async function GET(req: NextRequest): Promise<Response> {
     },
     orderBy: { endedAt: 'desc' },
     take: limit,
-    select: {
-      id:              true,
-      machineId:       true,
-      summary:         true,
-      durationSeconds: true,
-      endedAt:         true,
-      resolvedExpert:  true,
-      resolvedWorker:  true,
-      safetyTriggered: true,
-      markerLog:       true,
-    },
   });
 
-  const dto: WorkerSessionDTO[] = sessions.map((s) => ({
-    sessionId:       s.id,
-    machineId:       s.machineId,
-    machineName:     MACHINE_MAP.get(s.machineId)?.label ?? s.machineId,
-    summary:         s.summary ?? null,
-    durationSeconds: s.durationSeconds ?? 0,
-    endedAt:         (s.endedAt as Date).toISOString(),
-    resolvedExpert:  s.resolvedExpert ?? null,
-    resolvedWorker:  s.resolvedWorker ?? null,
-    safetyTriggered: s.safetyTriggered,
-    // Quick flag so UI can show "Show on 3D" without parsing JSON
-    hasMarkers:      !!s.markerLog && s.markerLog !== '[]',
-  }));
+  const dto: WorkerSessionDTO[] = sessions.map((s) => {
+    const markers      = safeParseArray<Marker>(s.markerLog);
+    const instructions = safeParseArray<Instruction>(s.instructionLog);
+    const transcript   = safeParseArray<PttChunk>(s.transcriptLog);
+
+    return {
+      sessionId:       s.id,
+      machineId:       s.machineId,
+      machineName:     MACHINE_MAP.get(s.machineId)?.label ?? s.machineId,
+      summary:         s.summary ?? null,
+      durationSeconds: s.durationSeconds ?? 0,
+      endedAt:         (s.endedAt as Date).toISOString(),
+      resolvedExpert:  s.resolvedExpert ?? null,
+      resolvedWorker:  s.resolvedWorker ?? null,
+      safetyTriggered: s.safetyTriggered,
+      locationDept:    s.locationDept    ?? null,
+      locationLine:    s.locationLine    ?? null,
+      locationStation: s.locationStation ?? null,
+      markers:         markers.map((m) => ({ id: m.id, label: m.label ?? 'Unlabeled marker' })),
+      instructions:    instructions.map((i) => ({ id: i.id, text: i.text, timestamp: i.timestamp })),
+      pttCount:        transcript.length,
+    };
+  });
 
   return Response.json(dto);
 }

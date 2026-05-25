@@ -1,7 +1,13 @@
 // Load .env BEFORE any other import that reads process.env (ai.ts, prisma.ts).
 // tsx does not auto-load .env files, so without this the ANTHROPIC_API_KEY
 // and DATABASE_URL stay undefined and AI summaries silently fail.
-import 'dotenv/config';
+//
+// We load both .env and .env.local with override:true so that values defined
+// in either file always win over a potentially-empty shell env var (Next.js
+// projects often end up with stale empty entries in .env.local).
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env',       override: true });
+dotenv.config({ path: '.env.local', override: false }); // .env wins for shared keys
 
 import { Server } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
@@ -496,9 +502,13 @@ io.on('connection', (socket) => {
 // ── AI Summarization (post-session background job) ────────────────────────────
 
 async function triggerAiSummary(sessionId: string): Promise<void> {
+  console.log(`[ai] ▶ triggerAiSummary start session=${sessionId} keyPresent=${!!process.env['ANTHROPIC_API_KEY']}`);
   try {
     const session = await prisma.session.findUnique({ where: { id: sessionId } });
-    if (!session) return;
+    if (!session) {
+      console.warn(`[ai] ✗ session=${sessionId} not found in DB`);
+      return;
+    }
 
     const machine = MACHINE_MAP.get(session.machineId);
     const machineLabel = machine?.label ?? session.machineId;
@@ -510,6 +520,9 @@ async function triggerAiSummary(sessionId: string): Promise<void> {
       ? (JSON.parse(session.transcriptLog) as PttChunk[])
       : [];
 
+    console.log(`[ai]   session=${sessionId} machine="${machineLabel}" instructions=${instructionLog.length} transcript=${transcriptLog.length}`);
+
+    const t0 = Date.now();
     const summary = await generateSessionSummary({
       machineLabel,
       instructionLog,
@@ -518,20 +531,23 @@ async function triggerAiSummary(sessionId: string): Promise<void> {
       resolvedWorker:  session.resolvedWorker ?? null,
       safetyTriggered: session.safetyTriggered,
     });
+    const elapsed = Date.now() - t0;
 
     await prisma.session.update({
       where: { id: sessionId },
       data:  { summary },
     });
 
-    console.log(`[ai] summary generated for session=${sessionId} (${summary.length} chars)`);
+    console.log(`[ai] ✓ summary generated session=${sessionId} chars=${summary.length} elapsed=${elapsed}ms`);
   } catch (err) {
-    console.error('[ai] summary generation failed for session', sessionId, err);
+    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    console.error(`[ai] ✗ FAILED session=${sessionId} reason="${msg}"`);
+    if (err instanceof Error && err.stack) console.error(err.stack);
     // Mark as failed so the UI can offer a "Regenerate" option
     await prisma.session.update({
       where: { id: sessionId },
       data:  { summary: '__AI_FAILED__' },
-    }).catch(() => {/* noop — best effort */});
+    }).catch((e: unknown) => console.error('[ai] also failed to mark __AI_FAILED__:', e));
   }
 }
 

@@ -8,9 +8,23 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Instruction, PttChunk } from '../types/socket';
 
-const client = new Anthropic({ apiKey: process.env['ANTHROPIC_API_KEY'] });
-
 const MODEL = 'claude-3-5-haiku-20241022';
+
+// Lazy client construction — env vars may not be loaded at module-eval time
+// (depends on import ordering vs dotenv/config). Reading at call time is robust.
+let _client: Anthropic | null = null;
+function getClient(): Anthropic {
+  if (_client) return _client;
+  const apiKey = process.env['ANTHROPIC_API_KEY'];
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY is not set — check .env and restart the dev server');
+  }
+  if (!apiKey.startsWith('sk-ant-')) {
+    throw new Error(`ANTHROPIC_API_KEY looks malformed (starts with "${apiKey.slice(0, 8)}…")`);
+  }
+  _client = new Anthropic({ apiKey });
+  return _client;
+}
 
 // ── Context window guard ───────────────────────────────────────────────────
 // Keep combined log under ~40,000 chars (~10k tokens) to avoid waste on
@@ -145,7 +159,7 @@ ${safetyLine}
 ${truncationNote}Chronological event log:
 ${logText}`;
 
-  const response = await client.messages.create({
+  const response = await getClient().messages.create({
     model:      MODEL,
     max_tokens: 512,
     system:     systemPrompt,

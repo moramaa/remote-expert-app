@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock, AlertTriangle,
   Eye, RefreshCw, Loader2, History, ChevronRight,
+  MapPin, MessageSquare, Tag, Mic,
 } from 'lucide-react';
 import { getStoredUserId } from '@/lib/identity';
 import type { WorkerSessionDTO } from '@/app/api/sessions/worker-history/route';
@@ -245,8 +246,99 @@ export default function WorkerHistoryPage() {
                             </div>
                           )}
 
+                          {/* Location chip (Department · Line · Station) */}
+                          {(s.locationDept || s.locationLine || s.locationStation) && (
+                            <div style={{ marginBottom: '14px' }}>
+                              <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748B', marginBottom: '6px' }}>
+                                Location
+                              </div>
+                              <div
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                  background: '#FFFFFF', border: '1px solid #E2E8F0',
+                                  borderRadius: '20px', padding: '5px 12px',
+                                  fontSize: '12px', color: '#0F172A', fontWeight: 500,
+                                }}
+                              >
+                                <MapPin size={12} color="#1D4ED8" />
+                                {[s.locationDept, s.locationLine, s.locationStation].filter(Boolean).join(' · ')}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Tags / markers */}
+                          {s.markers.length > 0 && (
+                            <div style={{ marginBottom: '14px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                                <Tag size={11} color="#64748B" />
+                                <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748B' }}>
+                                  Tags placed ({s.markers.length})
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {s.markers.map((m, idx) => (
+                                  <span
+                                    key={m.id}
+                                    style={{
+                                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                      background: '#FEF3C7', border: '1px solid #FCD34D',
+                                      borderRadius: '6px', padding: '4px 8px',
+                                      fontSize: '11px', color: '#78350F', fontWeight: 500,
+                                    }}
+                                  >
+                                    <span style={{ fontWeight: 700, color: '#D97706' }}>#{idx + 1}</span>
+                                    {m.label}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Expert's instructions */}
+                          {s.instructions.length > 0 && (
+                            <div style={{ marginBottom: '14px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                                <MessageSquare size={11} color="#64748B" />
+                                <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748B' }}>
+                                  Expert instructions ({s.instructions.length})
+                                </div>
+                              </div>
+                              <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {s.instructions.map((ins) => (
+                                  <li key={ins.id} style={{ fontSize: '12px', color: '#0F172A', lineHeight: 1.5 }}>
+                                    {ins.text}
+                                  </li>
+                                ))}
+                              </ol>
+                            </div>
+                          )}
+
+                          {/* Voice transcript count chip */}
+                          {s.pttCount > 0 && (
+                            <div style={{ marginBottom: '14px' }}>
+                              <div
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                  background: '#EFF6FF', border: '1px solid #BFDBFE',
+                                  borderRadius: '6px', padding: '5px 10px',
+                                  fontSize: '11px', color: '#1E40AF', fontWeight: 500,
+                                }}
+                              >
+                                <Mic size={11} />
+                                {s.pttCount} voice message{s.pttCount !== 1 ? 's' : ''} recorded
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Empty-content note */}
+                          {s.markers.length === 0 && s.instructions.length === 0 && s.pttCount === 0 && (
+                            <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#94A3B8', fontStyle: 'italic' }}>
+                              No markers, instructions, or voice messages were exchanged during this session.
+                            </p>
+                          )}
+
                           {/* AI Summary */}
-                          <div style={{ marginBottom: '12px' }}>
+                          <div style={{ marginBottom: '12px', borderTop: '1px solid #E2E8F0', paddingTop: '12px' }}>
                             <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748B', marginBottom: '6px' }}>
                               AI Summary
                             </div>
@@ -255,9 +347,9 @@ export default function WorkerHistoryPage() {
                                 Summary is being generated…
                               </p>
                             ) : isFailed ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                 <p style={{ margin: 0, fontSize: '12px', color: '#94A3B8', fontStyle: 'italic' }}>
-                                  AI summary not available.
+                                  No AI summary available for this session.
                                 </p>
                                 <button
                                   type="button"
@@ -281,7 +373,7 @@ export default function WorkerHistoryPage() {
                           </div>
 
                           {/* Show on 3D */}
-                          {s.hasMarkers && (
+                          {s.markers.length > 0 && (
                             <button
                               type="button"
                               onClick={() => router.push(`/worker?preview=${s.sessionId}`)}
