@@ -328,7 +328,7 @@ io.on('connection', (socket) => {
 
     // Update the DB record (fire-and-forget; don't block the event loop)
     void prisma.session.findUnique({ where: { id: sessionId } })
-      .then((existing) => {
+      .then((existing: Awaited<ReturnType<typeof prisma.session.findUnique>>) => {
         if (!existing) return;
         const durationSeconds = existing.startedAt
           ? Math.round((now.getTime() - existing.startedAt.getTime()) / 1000)

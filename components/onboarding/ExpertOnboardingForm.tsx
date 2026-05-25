@@ -128,6 +128,9 @@ export default function ExpertOnboardingForm() {
       {/* Certifications */}
       <div style={fieldStyle}>
         <label style={labelStyle}>Machine Certifications</label>
+        <p style={{ fontSize: '11px', color: '#94A3B8', margin: '0 0 6px' }}>
+          Search &amp; Add Certifications — select all machines you are qualified to service.
+        </p>
         <CertificationMultiSelect
           machines={MACHINES}
           selected={certifications}
