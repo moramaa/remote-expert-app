@@ -14,9 +14,10 @@ export default function AvailabilityToggle({ online, onChange, disabled = false 
         alignItems: 'center',
         gap: '10px',
         padding: '10px 16px',
-        background: '#0d1b2a',
-        border: `1px solid ${online ? '#f97316' : '#27272a'}`,
-        boxShadow: online ? '0 0 16px rgba(249,115,22,0.3)' : 'none',
+        background: '#FFFFFF',
+        border: `1px solid ${online ? '#1D4ED8' : '#E2E8F0'}`,
+        borderRadius: '8px',
+        boxShadow: online ? '0 0 0 3px #DBEAFE' : 'none',
         transition: 'border-color 0.2s, box-shadow 0.2s',
       }}
     >
@@ -31,7 +32,7 @@ export default function AvailabilityToggle({ online, onChange, disabled = false 
           position: 'relative',
           width: '44px',
           height: '24px',
-          background: online ? '#f97316' : '#27272a',
+          background: online ? '#1D4ED8' : '#E2E8F0',
           border: 'none',
           borderRadius: '12px',
           cursor: disabled ? 'not-allowed' : 'pointer',
@@ -60,14 +61,14 @@ export default function AvailabilityToggle({ online, onChange, disabled = false 
           style={{
             fontSize: '13px',
             fontWeight: 600,
-            color: online ? '#f97316' : '#94a3b8',
+            color: online ? '#1D4ED8' : '#94A3B8',
             fontFamily: 'var(--font-mono, monospace)',
             letterSpacing: '0.05em',
           }}
         >
           {online ? 'ONLINE' : 'OFFLINE'}
         </div>
-        <div style={{ fontSize: '10px', color: '#475569' }}>
+        <div style={{ fontSize: '10px', color: '#64748B' }}>
           {online ? 'Receiving SOS calls' : 'Not receiving calls'}
         </div>
       </div>

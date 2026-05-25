@@ -24,9 +24,9 @@ export default function WorkerZonesOverlay({ zones }: Props) {
               top: `${z.y}%`,
               width: `${z.width}%`,
               height: `${z.height}%`,
-              border: '2px solid #f97316',
-              background: 'rgba(249, 115, 22, 0.15)',
-              boxShadow: '0 0 12px rgba(249, 115, 22, 0.45)',
+              border: '2px solid #1D4ED8',
+              background: 'rgba(29, 78, 216, 0.12)',
+              boxShadow: '0 0 12px rgba(29, 78, 216, 0.35)',
             }}
           >
             {z.label && (
@@ -35,11 +35,12 @@ export default function WorkerZonesOverlay({ zones }: Props) {
                   position: 'absolute',
                   top: '-22px',
                   left: 0,
-                  background: '#f97316',
-                  color: '#000',
+                  background: '#1D4ED8',
+                  color: '#FFFFFF',
                   padding: '1px 6px',
                   fontSize: '10px',
                   fontFamily: 'monospace',
+                  borderRadius: '3px',
                 }}
               >
                 {z.label}

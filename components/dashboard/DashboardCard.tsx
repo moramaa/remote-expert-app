@@ -31,9 +31,10 @@ export default function DashboardCard({
         alignItems: 'center',
         gap: '12px',
         padding: '32px 24px',
-        background: '#0d1b2a',
-        border: `1px solid ${active ? '#f97316' : '#27272a'}`,
-        boxShadow: active ? '0 0 24px rgba(249,115,22,0.25)' : 'none',
+        background: '#FFFFFF',
+        border: `1px solid ${active ? '#1D4ED8' : '#E2E8F0'}`,
+        borderRadius: '12px',
+        boxShadow: active ? '0 0 0 3px #DBEAFE' : '0 1px 4px rgba(0,0,0,0.05)',
         cursor: clickable ? 'pointer' : 'not-allowed',
         opacity: comingSoon ? 0.55 : 1,
         transition: 'border-color 0.15s, box-shadow 0.15s',
@@ -42,21 +43,21 @@ export default function DashboardCard({
       }}
       onMouseEnter={(e) => {
         if (!clickable) return;
-        (e.currentTarget as HTMLDivElement).style.borderColor = '#f97316';
-        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 0 24px rgba(249,115,22,0.3)';
+        (e.currentTarget as HTMLDivElement).style.borderColor = '#1D4ED8';
+        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 0 0 3px #DBEAFE';
       }}
       onMouseLeave={(e) => {
         if (!clickable || active) return;
-        (e.currentTarget as HTMLDivElement).style.borderColor = '#27272a';
-        (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
+        (e.currentTarget as HTMLDivElement).style.borderColor = '#E2E8F0';
+        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.05)';
       }}
     >
-      <div style={{ color: '#f97316', lineHeight: 1 }}>{icon}</div>
+      <div style={{ color: '#1D4ED8', lineHeight: 1 }}>{icon}</div>
       <div>
-        <div style={{ fontSize: '15px', fontWeight: 600, color: '#f1f5f9', marginBottom: '4px' }}>
+        <div style={{ fontSize: '15px', fontWeight: 600, color: '#0F172A', marginBottom: '4px' }}>
           {title}
         </div>
-        <div style={{ fontSize: '12px', color: '#64748b', maxWidth: '200px' }}>
+        <div style={{ fontSize: '12px', color: '#64748B', maxWidth: '200px' }}>
           {description}
         </div>
       </div>

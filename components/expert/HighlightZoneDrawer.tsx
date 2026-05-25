@@ -49,11 +49,10 @@ export default function HighlightZoneDrawer({ active, zones, onComplete }: Props
     const width = Math.abs(drag.currentX - drag.startX);
     const height = Math.abs(drag.currentY - drag.startY);
     setDrag(null);
-    if (width < 1 || height < 1) return; // ignore tiny drags
+    if (width < 1 || height < 1) return;
     onComplete({ x, y, width, height });
   };
 
-  // Persistent zones layer (always rendered, even when inactive)
   return (
     <>
       {/* Drawing surface — only when active */}
@@ -80,9 +79,9 @@ export default function HighlightZoneDrawer({ active, zones, onComplete }: Props
                 top: `${Math.min(drag.startY, drag.currentY)}%`,
                 width: `${Math.abs(drag.currentX - drag.startX)}%`,
                 height: `${Math.abs(drag.currentY - drag.startY)}%`,
-                border: '2px solid #f97316',
-                background: 'rgba(249, 115, 22, 0.18)',
-                boxShadow: '0 0 12px rgba(249, 115, 22, 0.5)',
+                border: '2px solid #1D4ED8',
+                background: 'rgba(29, 78, 216, 0.15)',
+                boxShadow: '0 0 12px rgba(29, 78, 216, 0.4)',
                 pointerEvents: 'none',
               }}
             />
@@ -101,9 +100,9 @@ export default function HighlightZoneDrawer({ active, zones, onComplete }: Props
               top: `${z.y}%`,
               width: `${z.width}%`,
               height: `${z.height}%`,
-              border: '2px solid #f97316',
-              background: 'rgba(249, 115, 22, 0.12)',
-              boxShadow: '0 0 10px rgba(249, 115, 22, 0.35)',
+              border: '2px solid #1D4ED8',
+              background: 'rgba(29, 78, 216, 0.1)',
+              boxShadow: '0 0 10px rgba(29, 78, 216, 0.3)',
             }}
           >
             {z.label && (
@@ -112,11 +111,12 @@ export default function HighlightZoneDrawer({ active, zones, onComplete }: Props
                   position: 'absolute',
                   top: '-22px',
                   left: 0,
-                  background: '#f97316',
-                  color: '#000',
+                  background: '#1D4ED8',
+                  color: '#FFFFFF',
                   padding: '1px 6px',
                   fontSize: '10px',
                   fontFamily: 'monospace',
+                  borderRadius: '3px',
                 }}
               >
                 {z.label}

@@ -6,7 +6,7 @@ import type { TicketSummary } from '@/types/socket';
 interface Props {
   tickets: TicketSummary[];
   onAccept: (ticketId: string) => void;
-  accepting: string | null; // ticketId currently being accepted
+  accepting: string | null;
 }
 
 function timeAgo(ms: number): string {
@@ -21,23 +21,25 @@ export default function LiveQueuePanel({ tickets, onAccept, accepting }: Props) 
   return (
     <div
       style={{
-        background: '#0d1b2a',
-        border: '1px solid #27272a',
+        background: '#FFFFFF',
+        border: '1px solid #E2E8F0',
+        borderRadius: '12px',
         padding: '16px',
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <Zap size={14} color="#f97316" />
+        <Zap size={14} color="#1D4ED8" />
         <span
           style={{
             fontSize: '11px',
             fontFamily: 'var(--font-mono, monospace)',
             letterSpacing: '0.1em',
             textTransform: 'uppercase',
-            color: '#94a3b8',
+            color: '#64748B',
           }}
         >
           Live Queue
@@ -45,8 +47,8 @@ export default function LiveQueuePanel({ tickets, onAccept, accepting }: Props) 
         {tickets.length > 0 && (
           <span
             style={{
-              background: '#f97316',
-              color: '#000',
+              background: '#1D4ED8',
+              color: '#FFFFFF',
               fontSize: '10px',
               fontWeight: 700,
               padding: '1px 6px',
@@ -59,7 +61,7 @@ export default function LiveQueuePanel({ tickets, onAccept, accepting }: Props) 
       </div>
 
       {tickets.length === 0 ? (
-        <div style={{ fontSize: '12px', color: '#475569', padding: '8px 0' }}>
+        <div style={{ fontSize: '12px', color: '#64748B', padding: '8px 0' }}>
           No active SOS requests — you&apos;re up to date.
         </div>
       ) : (
@@ -68,9 +70,10 @@ export default function LiveQueuePanel({ tickets, onAccept, accepting }: Props) 
             <div
               key={t.ticketId}
               style={{
-                border: '1px solid #f9731640',
+                border: '1px solid #DBEAFE',
+                borderRadius: '8px',
                 padding: '12px',
-                background: '#f9731608',
+                background: '#F0F7FF',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'flex-start',
@@ -79,10 +82,10 @@ export default function LiveQueuePanel({ tickets, onAccept, accepting }: Props) 
             >
               {/* Info */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9', marginBottom: '2px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', marginBottom: '2px' }}>
                   {t.machineLabel}
                 </div>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                <div style={{ fontSize: '11px', color: '#64748B' }}>
                   {t.workerName} · {t.workerFactory}
                 </div>
                 <div
@@ -92,7 +95,7 @@ export default function LiveQueuePanel({ tickets, onAccept, accepting }: Props) 
                     gap: '4px',
                     marginTop: '4px',
                     fontSize: '10px',
-                    color: '#475569',
+                    color: '#94A3B8',
                     fontFamily: 'var(--font-mono, monospace)',
                   }}
                 >
@@ -107,9 +110,10 @@ export default function LiveQueuePanel({ tickets, onAccept, accepting }: Props) 
                 disabled={accepting !== null}
                 onClick={() => onAccept(t.ticketId)}
                 style={{
-                  background: accepting === t.ticketId ? '#64748b' : '#f97316',
-                  color: '#000',
+                  background: accepting === t.ticketId ? '#64748B' : '#1D4ED8',
+                  color: '#FFFFFF',
                   border: 'none',
+                  borderRadius: '6px',
                   padding: '6px 14px',
                   fontSize: '11px',
                   fontWeight: 700,

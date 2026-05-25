@@ -23,8 +23,8 @@ export default function LaserOverlay({ position }: Props) {
           width: '14px',
           height: '14px',
           borderRadius: '50%',
-          background: '#f97316',
-          boxShadow: '0 0 14px 4px rgba(249, 115, 22, 0.7)',
+          background: '#1D4ED8',
+          boxShadow: '0 0 14px 4px rgba(29, 78, 216, 0.6)',
           animation: 'laser-pulse 1.1s ease-in-out infinite',
         }}
       />

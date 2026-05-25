@@ -18,6 +18,45 @@ model Machine {
   vendor String       // e.g. "Krones"
 
   certifications ExpertCertification[]
+  playbooks      Playbook[]
+}
+
+// ── Session outcomes (persisted after every matched call) ───────────────────
+
+model Session {
+  id              String    @id @default(uuid())
+  ticketId        String    @unique
+  expertId        String
+  workerId        String
+  machineId       String
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+  durationSeconds Int?
+  resolvedExpert  Boolean?  // true = Yes; false = No (expert's answer)
+  resolvedWorker  Boolean?  // true = Yes; false = No (worker's answer)
+  summary         String?   // brief human-readable description of the resolved issue
+}
+
+// ── Deflection analytics (Smart SOS Deflection flow) ───────────────────────
+
+model DeflectionEvent {
+  id                 String   @id @default(uuid())
+  workerId           String
+  machineId          String
+  suggestedSessionId String?  // which past session was shown as suggestion
+  outcome            String   // "solved" | "unsolved"
+  createdAt          DateTime @default(now())
+}
+
+// ── Playbooks (pre-defined step-by-step resolution scripts) ────────────────
+
+model Playbook {
+  id        String  @id @default(uuid())
+  machineId String
+  name      String
+  steps     String  // JSON-encoded string[]
+
+  machine Machine @relation(fields: [machineId], references: [id])
 }
 
 // ── Expert profile ──────────────────────────────────────────────────────────

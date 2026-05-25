@@ -23,20 +23,20 @@ export default function WorkerOnboardingPage() {
     <div
       style={{
         minHeight: '100vh',
-        background: '#0a0f1e',
+        background: '#F8FAFC',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '32px 16px',
-        color: '#f1f5f9',
+        color: '#0F172A',
       }}
     >
       <div style={{ width: '100%', maxWidth: '420px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-          <HardHat size={28} color="#f97316" />
+          <HardHat size={28} color="#1D4ED8" />
           <div>
-            <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#f97316', margin: 0 }}>
+            <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#1D4ED8', margin: 0 }}>
               Worker Profile
             </h1>
             <p
@@ -45,7 +45,7 @@ export default function WorkerOnboardingPage() {
                 fontFamily: 'var(--font-mono, monospace)',
                 letterSpacing: '0.15em',
                 textTransform: 'uppercase',
-                color: '#475569',
+                color: '#64748B',
                 margin: 0,
               }}
             >
@@ -54,15 +54,17 @@ export default function WorkerOnboardingPage() {
           </div>
         </div>
 
-        <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '24px', marginTop: '8px' }}>
+        <p style={{ fontSize: '12px', color: '#64748B', marginBottom: '24px', marginTop: '8px' }}>
           Enter your details so experts know your environment and technical level.
         </p>
 
         <div
           style={{
-            background: '#0d1b2a',
-            border: '1px solid #27272a',
+            background: '#FFFFFF',
+            border: '1px solid #E2E8F0',
+            borderRadius: '12px',
             padding: '24px',
+            boxShadow: '0 1px 6px rgba(0,0,0,0.05)',
           }}
         >
           <WorkerOnboardingForm />

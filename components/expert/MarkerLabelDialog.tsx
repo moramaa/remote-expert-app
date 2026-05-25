@@ -12,8 +12,6 @@ export default function MarkerLabelDialog({ position, onSubmit, onCancel }: Prop
   const [label, setLabel] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Focus the input whenever a new dialog opens; reset the label.
-  // No auto-close timer — the dialog stays until Save, Skip, or Escape.
   useEffect(() => {
     if (!position) return;
     setLabel('');
@@ -30,9 +28,10 @@ export default function MarkerLabelDialog({ position, onSubmit, onCancel }: Prop
         top: `${position.y}%`,
         transform: 'translate(-50%, calc(-100% - 30px))',
         zIndex: 40,
-        background: '#0d1b2a',
-        border: '1px solid #f97316',
-        boxShadow: '0 0 16px rgba(249, 115, 22, 0.5)',
+        background: '#FFFFFF',
+        border: '1px solid #1D4ED8',
+        borderRadius: '8px',
+        boxShadow: '0 4px 20px rgba(29, 78, 216, 0.2)',
         padding: '8px',
         display: 'flex',
         gap: '6px',
@@ -52,23 +51,25 @@ export default function MarkerLabelDialog({ position, onSubmit, onCancel }: Prop
         placeholder="Add label?"
         style={{
           flex: 1,
-          background: '#0a0f1e',
-          border: '1px solid #27272a',
-          color: '#fff',
+          background: '#F8FAFC',
+          border: '1px solid #E2E8F0',
+          color: '#0F172A',
           padding: '4px 8px',
           fontSize: '12px',
           outline: 'none',
+          borderRadius: '4px',
         }}
       />
       <button
         type="button"
         onClick={() => onSubmit(label)}
         style={{
-          background: '#f97316',
-          color: '#000',
-          padding: '4px 8px',
+          background: '#1D4ED8',
+          color: '#FFFFFF',
+          padding: '4px 10px',
           fontSize: '11px',
           border: 'none',
+          borderRadius: '4px',
           cursor: 'pointer',
           fontWeight: 600,
         }}
@@ -80,10 +81,11 @@ export default function MarkerLabelDialog({ position, onSubmit, onCancel }: Prop
         onClick={() => onSubmit('')}
         style={{
           background: 'transparent',
-          border: '1px solid #27272a',
-          color: '#94a3b8',
+          border: '1px solid #E2E8F0',
+          color: '#64748B',
           padding: '4px 8px',
           fontSize: '11px',
+          borderRadius: '4px',
           cursor: 'pointer',
         }}
       >

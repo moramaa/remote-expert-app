@@ -11,5 +11,5 @@
     "noEmit": true,
     "jsx": "preserve"
   },
-  "include": ["server/**/*.ts", "types/socket.ts", "lib/machines.ts"]
+  "include": ["server/**/*.ts", "types/socket.ts", "lib/**/*.ts", "app/generated/prisma/**/*.ts"]
 }

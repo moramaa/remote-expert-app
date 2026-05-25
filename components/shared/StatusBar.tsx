@@ -16,18 +16,31 @@ const MODE_LABELS: Record<string, string> = {
 
 export default function StatusBar({ mode, markerCount, zoneCount, lastAction }: Props) {
   return (
-    <div className="flex items-center justify-between gap-6 border-t border-zinc-800 bg-[#0d1b2a] px-6 py-2 font-mono text-xs text-zinc-400">
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '24px',
+        borderTop: '1px solid #E2E8F0',
+        background: '#F8FAFC',
+        padding: '6px 20px',
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        color: '#64748B',
+      }}
+    >
       <div>
-        Mode: <span className="text-orange-500">{MODE_LABELS[mode] ?? mode}</span>
+        Mode: <span style={{ color: '#1D4ED8', fontWeight: 600 }}>{MODE_LABELS[mode] ?? mode}</span>
       </div>
       <div>
-        Markers: <span className="text-zinc-200">{markerCount}</span>
+        Markers: <span style={{ color: '#0F172A' }}>{markerCount}</span>
       </div>
       <div>
-        Zones: <span className="text-zinc-200">{zoneCount}</span>
+        Zones: <span style={{ color: '#0F172A' }}>{zoneCount}</span>
       </div>
-      <div className="flex-1 truncate text-right">
-        Last action: <span className="text-zinc-200">{lastAction || '—'}</span>
+      <div style={{ flex: 1, overflow: 'hidden', textAlign: 'right', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        Last action: <span style={{ color: '#0F172A' }}>{lastAction || '—'}</span>
       </div>
     </div>
   );
