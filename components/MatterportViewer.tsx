@@ -155,6 +155,32 @@ export default function MatterportViewer({
     [onMarkerClick]
   );
 
+  /**
+   * Forward mouse-move events from the click-capture overlay to the underlying
+   * matterport-viewer element so that Pointer.intersection stays current while
+   * the overlay is blocking native events.  Without this, lastIntersectionRef
+   * is stale and placements land at the last position the cursor visited before
+   * the overlay appeared.
+   */
+  const handleMoveOverlay = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const viewer = mountRef.current?.querySelector('matterport-viewer');
+      if (!viewer) return;
+      viewer.dispatchEvent(
+        new MouseEvent('mousemove', {
+          bubbles:    true,
+          cancelable: true,
+          clientX:    event.clientX,
+          clientY:    event.clientY,
+          screenX:    event.screenX,
+          screenY:    event.screenY,
+          buttons:    event.buttons,
+        }),
+      );
+    },
+    [],
+  );
+
   return (
     <div
       className={className}
@@ -166,6 +192,7 @@ export default function MatterportViewer({
       {captureClicks && status === 'ready' && (
         <div
           onClick={handleClickOverlay}
+          onMouseMove={handleMoveOverlay}
           style={{
             position: 'absolute',
             inset: 0,
