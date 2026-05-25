@@ -28,16 +28,25 @@ export default function ExpertDashboardPage() {
 
   const certIdsRef = useRef<string[]>([]);
 
-  // Load profile from DB
+  // Load profile from DB; re-emit availability if toggle is already on when certs arrive
   useEffect(() => {
     if (profile.status !== 'ready') return;
     fetch(`/api/me?id=${profile.userId}&role=expert`)
       .then((r) => r.json())
       .then((data: ExpertProfile) => {
         setExpertProfile(data);
-        certIdsRef.current = (data.certifications ?? []).map((c) => c.machineId);
+        const ids = (data.certifications ?? []).map((c) => c.machineId);
+        certIdsRef.current = ids;
+        // If the expert already toggled online before certs loaded, re-emit with correct certs
+        setOnline((prev) => {
+          if (prev && socket && isConnected) {
+            socket.emit('expert:set-availability', { online: true, certificationIds: ids });
+          }
+          return prev;
+        });
       })
       .catch(() => {/* noop */});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
   // Socket listeners
@@ -140,7 +149,7 @@ export default function ExpertDashboardPage() {
           <AvailabilityToggle
             online={online}
             onChange={handleToggle}
-            disabled={!isConnected}
+            disabled={!isConnected || !expertProfile}
           />
         </div>
 

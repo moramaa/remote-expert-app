@@ -71,8 +71,16 @@ export default function WorkerDashboardPage() {
   function handleMachineSelect(selectedMachineId: string): void {
     setShowPicker(false);
 
-    if (!socket || !workerProfile) return;
+    if (!socket || !isConnected) {
+      alert('Not connected to server. Please wait a moment and try again.');
+      return;
+    }
+    if (!workerProfile) {
+      alert('Profile still loading. Please try again in a moment.');
+      return;
+    }
 
+    // Show overlay immediately so the user sees feedback right away
     setMachineId(selectedMachineId);
     setSearching(true);
 
@@ -87,7 +95,7 @@ export default function WorkerDashboardPage() {
         if ('error' in result) {
           setSearching(false);
           setMachineId(null);
-          alert(`Error: ${result.error}`);
+          alert(`Server error: ${result.error}`);
           return;
         }
         setTicketId(result.ticketId);
@@ -96,8 +104,9 @@ export default function WorkerDashboardPage() {
   }
 
   function handleCancelSOS(): void {
-    if (!socket || !ticketId) return;
-    socket.emit('worker:sos-cancel', { ticketId });
+    if (socket && ticketId) {
+      socket.emit('worker:sos-cancel', { ticketId });
+    }
     setSearching(false);
     setTicketId(null);
     setMachineId(null);
@@ -188,11 +197,11 @@ export default function WorkerDashboardPage() {
         />
       )}
 
-      {/* Searching overlay */}
-      {searching && ticketId && (
+      {/* Searching overlay — shown as soon as searching starts, before ticketId arrives */}
+      {searching && (
         <SearchingOverlay
           machineName={machineName}
-          ticketId={ticketId}
+          ticketId={ticketId ?? ''}
           onCancel={handleCancelSOS}
         />
       )}
