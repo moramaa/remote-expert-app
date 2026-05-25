@@ -2,15 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, BookOpen, History, Calendar } from 'lucide-react';
-import DashboardCard from '@/components/dashboard/DashboardCard';
-import MachinePickerModal from '@/components/dashboard/MachinePickerModal';
-import SearchingOverlay from '@/components/dashboard/SearchingOverlay';
+import { AlertTriangle, PhoneCall } from 'lucide-react';
+import SosFlow from '@/components/worker/SosFlow';
 import { useSocket } from '@/hooks/useSocket';
 import { useProfile } from '@/hooks/useProfile';
 import { getStoredUserId, storeSessionId } from '@/lib/identity';
-import { MACHINES, MACHINE_MAP } from '@/lib/machines';
-import type { SosAck } from '@/types/socket';
 
 interface WorkerProfile {
   name: string;
@@ -24,10 +20,7 @@ export default function WorkerDashboardPage() {
   const { socket, isConnected } = useSocket();
 
   const [workerProfile, setWorkerProfile] = useState<WorkerProfile | null>(null);
-  const [showPicker,    setShowPicker]    = useState(false);
-  const [ticketId,      setTicketId]      = useState<string | null>(null);
-  const [machineId,     setMachineId]     = useState<string | null>(null);
-  const [searching,     setSearching]     = useState(false);
+  const [showSosFlow,   setShowSosFlow]   = useState(false);
 
   // Load profile
   useEffect(() => {
@@ -38,78 +31,18 @@ export default function WorkerDashboardPage() {
       .catch(() => {/* noop */});
   }, [profile]);
 
-  // Socket listeners
+  // Handle session:join events (e.g., expert accepts from their dashboard)
   useEffect(() => {
     if (!socket) return;
-
-    const onTicketStatus = (payload: { ticketId: string; state: string; sessionId?: string; expertName?: string }): void => {
-      if (payload.state === 'matched' && payload.sessionId) {
-        storeSessionId(payload.sessionId);
-        router.push('/worker');
-      }
-      if (payload.state === 'cancelled') {
-        setSearching(false);
-        setTicketId(null);
-        setMachineId(null);
-      }
-    };
 
     const onSessionJoin = ({ sessionId }: { sessionId: string; role: 'expert' | 'worker' }): void => {
       storeSessionId(sessionId);
       router.push('/worker');
     };
 
-    socket.on('worker:ticket-status', onTicketStatus);
-    socket.on('session:join',         onSessionJoin);
-
-    return () => {
-      socket.off('worker:ticket-status', onTicketStatus);
-      socket.off('session:join',         onSessionJoin);
-    };
+    socket.on('session:join', onSessionJoin);
+    return () => { socket.off('session:join', onSessionJoin); };
   }, [socket, router]);
-
-  function handleMachineSelect(selectedMachineId: string): void {
-    setShowPicker(false);
-
-    if (!socket || !isConnected) {
-      alert('Not connected to server. Please wait a moment and try again.');
-      return;
-    }
-    if (!workerProfile) {
-      alert('Profile still loading. Please try again in a moment.');
-      return;
-    }
-
-    setMachineId(selectedMachineId);
-    setSearching(true);
-
-    socket.emit(
-      'worker:sos-create',
-      {
-        machineId:     selectedMachineId,
-        workerName:    workerProfile.name,
-        workerFactory: workerProfile.factory,
-      },
-      (result: SosAck) => {
-        if ('error' in result) {
-          setSearching(false);
-          setMachineId(null);
-          alert(`Server error: ${result.error}`);
-          return;
-        }
-        setTicketId(result.ticketId);
-      },
-    );
-  }
-
-  function handleCancelSOS(): void {
-    if (socket && ticketId) {
-      socket.emit('worker:sos-cancel', { ticketId });
-    }
-    setSearching(false);
-    setTicketId(null);
-    setMachineId(null);
-  }
 
   if (profile.status === 'loading') {
     return (
@@ -128,46 +61,71 @@ export default function WorkerDashboardPage() {
   }
 
   const userId = getStoredUserId() ?? '';
-  const machineName = machineId ? (MACHINE_MAP.get(machineId)?.label ?? machineId) : '';
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC', color: '#0F172A', padding: '24px 16px' }}>
-      <div style={{ maxWidth: '480px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: '#F8FAFC',
+        color: '#0F172A',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          background: '#FFFFFF',
+          borderBottom: '1px solid #E2E8F0',
+          padding: '16px 20px',
+        }}
+      >
+        <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#1D4ED8', margin: 0 }}>
+          {workerProfile?.name ?? 'Worker'}
+        </h1>
+        <p style={{ fontSize: '12px', color: '#64748B', margin: '2px 0 0' }}>
+          {workerProfile?.factory ?? ''}
+        </p>
+        <p
+          style={{
+            fontSize: '10px',
+            color: '#94A3B8',
+            fontFamily: 'monospace',
+            margin: '2px 0 0',
+            letterSpacing: '0.08em',
+          }}
+        >
+          ID: {userId.slice(0, 8)}… · Worker View
+        </p>
+      </div>
 
-        {/* Header */}
-        <div>
-          <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#1D4ED8', margin: 0 }}>
-            {workerProfile?.name ?? 'Worker'}
-          </h1>
-          <p style={{ fontSize: '11px', color: '#64748B', margin: '4px 0 0' }}>
-            {workerProfile?.factory ?? ''}
-          </p>
-          <p
-            style={{
-              fontSize: '10px',
-              color: '#94A3B8',
-              fontFamily: 'monospace',
-              margin: '2px 0 0',
-              letterSpacing: '0.08em',
-            }}
-          >
-            ID: {userId.slice(0, 8)}… · Worker View
-          </p>
-        </div>
-
+      {/* Body — vertically centered hero */}
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '32px 20px',
+          gap: '20px',
+        }}
+      >
         {/* Offline warning */}
         {!isConnected && (
           <div
             style={{
+              width: '100%',
+              maxWidth: '420px',
               padding: '10px 14px',
               border: '1px solid #DC2626',
               background: '#FEE2E2',
-              fontSize: '11px',
+              fontSize: '12px',
               color: '#DC2626',
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              borderRadius: '6px',
+              borderRadius: '8px',
             }}
           >
             <AlertTriangle size={14} />
@@ -175,58 +133,93 @@ export default function WorkerDashboardPage() {
           </div>
         )}
 
-        {/* Dashboard cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <DashboardCard
-              icon={<AlertTriangle size={36} />}
-              title="Open SOS Call"
-              description="Connect instantly with a certified expert for live 3D guidance."
-              onClick={() => setShowPicker(true)}
-              active={searching}
-            />
+        {/* Hero SOS card */}
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '420px',
+            background: '#FFFFFF',
+            border: '1px solid #E2E8F0',
+            borderRadius: '16px',
+            padding: '40px 32px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '20px',
+            boxShadow: '0 4px 24px rgba(29,78,216,0.08)',
+            textAlign: 'center',
+          }}
+        >
+          {/* Icon ring */}
+          <div
+            style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '50%',
+              background: '#DBEAFE',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <PhoneCall size={36} color="#1D4ED8" />
           </div>
 
-          <DashboardCard
-            icon={<BookOpen size={28} />}
-            title="Knowledge Base"
-            description="Search manuals and past solutions."
-            comingSoon
-          />
-
-          <DashboardCard
-            icon={<History size={28} />}
-            title="Session History"
-            description="Review past assistance sessions."
-            comingSoon
-          />
-
-          <div style={{ gridColumn: '1 / -1' }}>
-            <DashboardCard
-              icon={<Calendar size={28} />}
-              title="Scheduled Classes"
-              description="Upcoming training sessions with experts."
-              comingSoon
-            />
+          <div>
+            <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#0F172A', margin: '0 0 8px' }}>
+              Need Expert Help?
+            </h2>
+            <p style={{ fontSize: '14px', color: '#64748B', margin: 0, lineHeight: '1.5' }}>
+              Connect instantly with a certified expert for live 3D guidance directly on your machine.
+            </p>
           </div>
+
+          <button
+            onClick={() => setShowSosFlow(true)}
+            disabled={!isConnected}
+            style={{
+              width: '100%',
+              padding: '16px',
+              background: isConnected ? '#1D4ED8' : '#94A3B8',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '10px',
+              fontSize: '16px',
+              fontWeight: 700,
+              cursor: isConnected ? 'pointer' : 'not-allowed',
+              letterSpacing: '0.02em',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              if (isConnected) (e.currentTarget as HTMLButtonElement).style.background = '#1E40AF';
+            }}
+            onMouseLeave={(e) => {
+              if (isConnected) (e.currentTarget as HTMLButtonElement).style.background = '#1D4ED8';
+            }}
+          >
+            Open SOS Call
+          </button>
+
+          <p style={{ fontSize: '11px', color: '#94A3B8', margin: 0 }}>
+            Average response time: &lt; 2 minutes
+          </p>
         </div>
       </div>
 
-      {/* Machine picker modal */}
-      {showPicker && (
-        <MachinePickerModal
-          machines={MACHINES}
-          onSelect={handleMachineSelect}
-          onClose={() => setShowPicker(false)}
-        />
-      )}
-
-      {/* Searching overlay */}
-      {searching && (
-        <SearchingOverlay
-          machineName={machineName}
-          ticketId={ticketId ?? ''}
-          onCancel={handleCancelSOS}
+      {/* SOS bottom-sheet flow */}
+      {showSosFlow && workerProfile && socket && (
+        <SosFlow
+          profile={{
+            name:    workerProfile.name,
+            factory: workerProfile.factory,
+          }}
+          socket={socket}
+          isConnected={isConnected}
+          onSessionJoined={(sessionId) => {
+            storeSessionId(sessionId);
+            router.push('/worker');
+          }}
+          onClose={() => setShowSosFlow(false)}
         />
       )}
     </div>

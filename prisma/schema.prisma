@@ -34,6 +34,18 @@ model Session {
   durationSeconds Int?
   resolvedExpert  Boolean?  // true = Yes; false = No (expert's answer)
   resolvedWorker  Boolean?  // true = Yes; false = No (worker's answer)
+  summary         String?   // brief human-readable description of the resolved issue
+}
+
+// ── Deflection analytics (Smart SOS Deflection flow) ───────────────────────
+
+model DeflectionEvent {
+  id                 String   @id @default(uuid())
+  workerId           String
+  machineId          String
+  suggestedSessionId String?  // which past session was shown as suggestion
+  outcome            String   // "solved" | "unsolved"
+  createdAt          DateTime @default(now())
 }
 
 // ── Playbooks (pre-defined step-by-step resolution scripts) ────────────────

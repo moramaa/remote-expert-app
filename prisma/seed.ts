@@ -159,6 +159,88 @@ async function main(): Promise<void> {
     console.log(`  ✓ [${pb.machineId}] ${pb.name}`);
   }
 
+  console.log('[seed] Upserting demo sessions…');
+  const DEMO_SESSIONS: Array<{
+    id: string; ticketId: string; expertId: string; workerId: string;
+    machineId: string; durationSeconds: number; summary: string;
+    startedAt: Date;
+  }> = [
+    {
+      id: 'demo-session-001',
+      ticketId: 'demo-ticket-001',
+      expertId: 'demo-expert-001',
+      workerId: 'demo-worker-001',
+      machineId: 'krones_filler',
+      durationSeconds: 742,
+      startedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), // 3 days ago
+      summary: 'Filler stopped mid-cycle due to inlet pressure dropping below 2.5 bar. Expert guided technician to open the main inlet valve fully and cycle the pressure relief valve. Machine resumed normal operation after a RESET + START sequence on the HMI.',
+    },
+    {
+      id: 'demo-session-002',
+      ticketId: 'demo-ticket-002',
+      expertId: 'demo-expert-001',
+      workerId: 'demo-worker-002',
+      machineId: 'krones_filler',
+      durationSeconds: 380,
+      startedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
+      summary: 'Overfill alarm triggered on bowl level sensor S3. Sensor head had product residue causing false HIGH reading. Cleaned with isopropyl alcohol and ran Auto-Cal from HMI → Calibration. Issue resolved after 3 fill cycles.',
+    },
+    {
+      id: 'demo-session-003',
+      ticketId: 'demo-ticket-003',
+      expertId: 'demo-expert-002',
+      workerId: 'demo-worker-003',
+      machineId: 'siemens_s7_1500',
+      durationSeconds: 1120,
+      startedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
+      summary: 'PLC entered STOP mode after memory address 0x4F fault. Expert connected via TIA Portal, reviewed diagnostic buffer, and identified a faulty temperature sensor on output module EM1. Cleared fault, substituted sensor reading, and restored RUN mode.',
+    },
+    {
+      id: 'demo-session-004',
+      ticketId: 'demo-ticket-004',
+      expertId: 'demo-expert-002',
+      workerId: 'demo-worker-001',
+      machineId: 'siemens_s7_1500',
+      durationSeconds: 540,
+      startedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
+      summary: 'PROFINET communication failure between S7-1500 and remote I/O rack. Cable on port X1 P1 was loose at the switch end. Re-seating the PROFINET cable and resetting the PLC network interface restored full communications within 9 minutes.',
+    },
+    {
+      id: 'demo-session-005',
+      ticketId: 'demo-ticket-005',
+      expertId: 'demo-expert-003',
+      workerId: 'demo-worker-004',
+      machineId: 'generic_compressor',
+      durationSeconds: 495,
+      startedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // 1 day ago
+      summary: 'Compressor refused to start — motor overload relay had tripped due to momentary voltage spike. Oil level and temperature were within spec. Expert instructed technician to press RESET on the relay and restart. Compressor reached 4 bar within 8 seconds.',
+    },
+    {
+      id: 'demo-session-006',
+      ticketId: 'demo-ticket-006',
+      expertId: 'demo-expert-001',
+      workerId: 'demo-worker-002',
+      machineId: 'krones_labeler',
+      durationSeconds: 670,
+      startedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000), // 4 days ago
+      summary: 'Label misalignment of ~3 mm on front labels. Tension knob on roller R2 was over-tightened, stretching the label web. Expert walked technician through loosening 2 turns, re-threading the web, and re-tensioning. 10 test bottles showed alignment within ±0.5 mm.',
+    },
+  ];
+
+  for (const s of DEMO_SESSIONS) {
+    await prisma.session.upsert({
+      where: { id: s.id },
+      update: { summary: s.summary },
+      create: {
+        ...s,
+        endedAt: new Date(s.startedAt.getTime() + s.durationSeconds * 1000),
+        resolvedExpert: true,
+        resolvedWorker: true,
+      },
+    });
+    console.log(`  ✓ [${s.machineId}] session ${s.id.slice(-3)}`);
+  }
+
   console.log('[seed] Done.');
 }
 
