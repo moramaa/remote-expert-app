@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertTriangle, PhoneCall } from 'lucide-react';
+import { AlertTriangle, PhoneCall, History } from 'lucide-react';
 import SosFlow from '@/components/worker/SosFlow';
 import { useSocket } from '@/hooks/useSocket';
 import { useProfile } from '@/hooks/useProfile';
@@ -78,7 +78,7 @@ function WorkerDashboardInner() {
       </div>
 
       {/* Body — vertically centered hero */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 20px', gap: '20px' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 20px', gap: '16px' }}>
         {/* Offline warning */}
         {!isConnected && (
           <div
@@ -128,6 +128,31 @@ function WorkerDashboardInner() {
           </button>
           <p style={{ fontSize: '11px', color: '#94A3B8', margin: 0 }}>Average response time: &lt; 2 minutes</p>
         </div>
+
+        {/* History button */}
+        <button
+          onClick={() => router.push('/dashboard/worker/history')}
+          style={{
+            width: '100%', maxWidth: '420px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            padding: '12px',
+            background: '#FFFFFF', color: '#475569',
+            border: '1px solid #E2E8F0', borderRadius: '10px',
+            fontSize: '14px', fontWeight: 500,
+            cursor: 'pointer', transition: 'border-color 0.15s, color 0.15s',
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = '#1D4ED8';
+            (e.currentTarget as HTMLButtonElement).style.color = '#1D4ED8';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = '#E2E8F0';
+            (e.currentTarget as HTMLButtonElement).style.color = '#475569';
+          }}
+        >
+          <History size={16} />
+          View Call History
+        </button>
       </div>
 
       {/* SOS bottom-sheet flow */}

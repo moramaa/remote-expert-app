@@ -291,6 +291,7 @@ function SuggestionsStep({
     const isAnswering = answered === s.sessionId;
     const isResolved  = s.resolvedExpert || s.resolvedWorker;
     const isFailed    = s.summary === '__AI_FAILED__';
+    const isPending   = s.summary === null;
 
     return (
       <div
@@ -329,8 +330,12 @@ function SuggestionsStep({
               )}
             </div>
 
-            {/* Summary text or failed state */}
-            {isFailed ? (
+            {/* Summary text, pending, or failed state */}
+            {isPending ? (
+              <span style={{ fontSize: '12px', color: '#94A3B8', fontStyle: 'italic' }}>
+                AI summary is being generated…
+              </span>
+            ) : isFailed ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '12px', color: '#94A3B8', fontStyle: 'italic' }}>AI summary not available.</span>
                 <button

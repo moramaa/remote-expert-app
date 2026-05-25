@@ -398,13 +398,13 @@ function WorkerPageInner() {
         {/* Viewer */}
         <div style={{ position: 'relative', height: '50vh', minHeight: '280px', background: '#000' }}>
           <MatterportViewer
-            isReadOnly
+            isReadOnly={!workerMirror}
             onSdkReady={(sdk) => {
               mpSdkRef.current = sdk;
               setViewerReady(true);
               setMarkers((prev) => [...prev]);
             }}
-            syncedCamera={isPreview ? null : syncedCamera}
+            syncedCamera={isPreview ? null : (workerMirror ? null : syncedCamera)}
             onCameraMove={handleCameraMove}
           >
             <WorkerZonesOverlay zones={zones} />

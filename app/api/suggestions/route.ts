@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 export interface SuggestionDTO {
   sessionId:       string;
   machineId:       string;
-  summary:         string;
+  summary:         string | null;   // null = AI summary not yet generated
   durationSeconds: number;
   resolvedAt:      string; // ISO date string
   resolvedExpert:  boolean | null;
@@ -34,9 +34,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     where: {
       machineId,
       endedAt: { not: null },
-      summary: { not: null },
-      // Exclude AI-failed stubs from worker-facing suggestions
-      NOT: { summary: '__AI_FAILED__' },
+      // Show all ended sessions — include those with pending or failed summaries
+      // The worker UI handles null / __AI_FAILED__ with appropriate placeholders
     },
     orderBy: [
       // Resolved sessions first, then by most recent
@@ -59,7 +58,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const dto: SuggestionDTO[] = sessions.map((s) => ({
     sessionId:       s.id,
     machineId:       s.machineId,
-    summary:         s.summary ?? '',
+    summary:         s.summary ?? null,
     durationSeconds: s.durationSeconds ?? 0,
     resolvedAt:      (s.endedAt as Date).toISOString(),
     resolvedExpert:  s.resolvedExpert ?? null,
