@@ -532,6 +532,18 @@ export default function ExpertPage() {
             </div>
           )}
 
+          {/* Floating PTT FAB */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '24px',
+              right: '20px',
+              zIndex: 20,
+            }}
+          >
+            <PttButton speakerId={userId} onChunk={handlePttChunk} floating />
+          </div>
+
           {/* Worker PTT subtitle */}
           {workerPttSubtitle && (
             <div
@@ -586,21 +598,6 @@ export default function ExpertPage() {
 
             {/* Playbooks */}
             <PlaybookSelector onSendStep={sendInstruction} />
-
-            {/* PTT */}
-            <div
-              style={{
-                padding: '8px 10px',
-                border: '1px solid #E2E8F0',
-                borderRadius: '8px',
-                background: '#FFFFFF',
-              }}
-            >
-              <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
-                Push-to-Talk
-              </div>
-              <PttButton speakerId={userId} onChunk={handlePttChunk} />
-            </div>
 
             {/* Send Instruction */}
             <InstructionInput recent={sentInstructions} onSend={(text) => sendInstruction(text)} />

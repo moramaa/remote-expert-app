@@ -36,9 +36,11 @@ interface Props {
   onChunk:   (chunk: PttChunk) => void;
   speakerId: string;
   label?:    string;
+  /** Render as a floating circular FAB overlaid on the viewer */
+  floating?: boolean;
 }
 
-export default function PttButton({ onChunk, speakerId, label = 'Hold to Talk' }: Props) {
+export default function PttButton({ onChunk, speakerId, label = 'Hold to Talk', floating = false }: Props) {
   const [pttState,   setPttState]   = useState<PttState>('idle');
   const [isSupported, setIsSupported] = useState(true);
 
@@ -132,6 +134,95 @@ export default function PttButton({ onChunk, speakerId, label = 'Hold to Talk' }
     listening:'Listening…',
   };
 
+  // ── Floating FAB variant ─────────────────────────────────────────────────
+  if (floating) {
+    const fabBg: Record<PttState, string> = {
+      idle:      '#1D4ED8',
+      priming:   '#D97706',
+      listening: '#DC2626',
+    };
+    const fabShadow: Record<PttState, string> = {
+      idle:      '0 4px 16px rgba(29,78,216,0.45)',
+      priming:   '0 4px 16px rgba(217,119,6,0.45)',
+      listening: '0 4px 16px rgba(220,38,38,0.45)',
+    };
+    const fabLabel: Record<PttState, string> = {
+      idle:      'Hold to Talk',
+      priming:   'Preparing…',
+      listening: 'Listening…',
+    };
+    return (
+      <>
+        <style>{`
+          @keyframes ptt-pulse {
+            0%, 100% { box-shadow: 0 4px 16px rgba(220,38,38,0.45), 0 0 0 0px rgba(220,38,38,0.4); }
+            50%       { box-shadow: 0 4px 16px rgba(220,38,38,0.45), 0 0 0 10px rgba(220,38,38,0.0); }
+          }
+          @keyframes ptt-ring {
+            0%   { transform: scale(1);    opacity: 0.6; }
+            100% { transform: scale(1.8);  opacity: 0; }
+          }
+        `}</style>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', userSelect: 'none' }}>
+          {/* Ring pulse when listening */}
+          <div style={{ position: 'relative', width: '56px', height: '56px' }}>
+            {pttState === 'listening' && (
+              <div
+                style={{
+                  position: 'absolute', inset: 0,
+                  borderRadius: '50%',
+                  border: '2px solid #DC2626',
+                  animation: 'ptt-ring 1s ease-out infinite',
+                }}
+              />
+            )}
+            <button
+              onPointerDown={handlePointerDown}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                border: 'none',
+                background: fabBg[pttState],
+                color: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: fabShadow[pttState],
+                transition: 'background 0.15s, box-shadow 0.15s',
+                animation: pttState === 'listening' ? 'ptt-pulse 1.2s ease-in-out infinite' : 'none',
+                position: 'relative',
+                zIndex: 1,
+              }}
+            >
+              <Mic size={22} />
+            </button>
+          </div>
+          {/* State label */}
+          <div
+            style={{
+              fontSize: '10px',
+              fontWeight: 700,
+              color: '#FFFFFF',
+              background: 'rgba(0,0,0,0.55)',
+              backdropFilter: 'blur(6px)',
+              padding: '3px 10px',
+              borderRadius: '20px',
+              letterSpacing: '0.04em',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {fabLabel[pttState]}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── Default inline button ────────────────────────────────────────────────
   return (
     <>
       <style>{`

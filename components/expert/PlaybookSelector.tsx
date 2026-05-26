@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { BookOpen, ChevronRight, RotateCcw } from 'lucide-react';
+import { BookOpen, ChevronRight, ChevronDown, RotateCcw } from 'lucide-react';
 import type { Instruction } from '@/types/socket';
 import type { PlaybookDTO } from '@/app/api/playbooks/route';
 
@@ -18,6 +18,7 @@ export default function PlaybookSelector({ onSendStep }: Props) {
   const [selected, setSelected] = useState<PlaybookDTO | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [stepsOpen, setStepsOpen] = useState(true);
 
   useEffect(() => {
     fetch('/api/playbooks')
@@ -30,6 +31,7 @@ export default function PlaybookSelector({ onSendStep }: Props) {
     const pb = playbooks.find((p) => p.id === id) ?? null;
     setSelected(pb);
     setStepIndex(0);
+    if (pb) setStepsOpen(true); // auto-expand when a playbook is chosen
   }, [playbooks]);
 
   const handleSendStep = useCallback(() => {
@@ -72,14 +74,15 @@ export default function PlaybookSelector({ onSendStep }: Props) {
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          padding: '10px 12px',
+          padding: '8px 12px',
           background: '#F8FAFC',
           borderBottom: '1px solid #E2E8F0',
         }}
       >
-        <BookOpen size={14} color="#1D4ED8" />
+        <BookOpen size={13} color="#1D4ED8" />
         <span
           style={{
+            flex: 1,
             fontSize: '11px',
             fontWeight: 700,
             color: '#1D4ED8',
@@ -89,9 +92,32 @@ export default function PlaybookSelector({ onSendStep }: Props) {
         >
           Playbooks
         </span>
+        {/* Progress badge */}
+        {selected && (
+          <span style={{ fontSize: '10px', color: '#64748B', fontVariantNumeric: 'tabular-nums' }}>
+            {Math.min(stepIndex, selected.steps.length)}/{selected.steps.length}
+          </span>
+        )}
+        {/* Collapse toggle (only when a playbook is active) */}
+        {selected && (
+          <button
+            type="button"
+            onClick={() => setStepsOpen((v) => !v)}
+            title={stepsOpen ? 'Collapse steps' : 'Show steps'}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              padding: '2px', color: '#94A3B8', display: 'flex', alignItems: 'center',
+            }}
+          >
+            <ChevronDown
+              size={14}
+              style={{ transition: 'transform 0.2s', transform: stepsOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+            />
+          </button>
+        )}
       </div>
 
-      <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {/* Dropdown */}
         <select
           value={selected?.id ?? ''}
@@ -99,10 +125,10 @@ export default function PlaybookSelector({ onSendStep }: Props) {
           disabled={loading}
           style={{
             width: '100%',
-            padding: '8px 10px',
+            padding: '7px 10px',
             border: '1px solid #E2E8F0',
             borderRadius: '6px',
-            fontSize: '13px',
+            fontSize: '12px',
             color: '#0F172A',
             background: '#FFFFFF',
             cursor: 'pointer',
@@ -120,16 +146,16 @@ export default function PlaybookSelector({ onSendStep }: Props) {
           ))}
         </select>
 
-        {/* Step list + send button */}
-        {selected && (
+        {/* Step list + send button — collapsible */}
+        {selected && stepsOpen && (
           <>
             <div
               style={{
-                maxHeight: '140px',
+                maxHeight: '110px',
                 overflowY: 'auto',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '4px',
+                gap: '3px',
               }}
             >
               {selected.steps.map((step, idx) => (
@@ -138,7 +164,7 @@ export default function PlaybookSelector({ onSendStep }: Props) {
                   style={{
                     display: 'flex',
                     gap: '8px',
-                    padding: '6px 8px',
+                    padding: '5px 8px',
                     borderRadius: '6px',
                     background: idx < stepIndex
                       ? '#F0FDF4'
@@ -146,7 +172,7 @@ export default function PlaybookSelector({ onSendStep }: Props) {
                         ? '#DBEAFE'
                         : '#F8FAFC',
                     borderLeft: `3px solid ${idx < stepIndex ? '#16A34A' : idx === stepIndex ? '#1D4ED8' : '#E2E8F0'}`,
-                    fontSize: '12px',
+                    fontSize: '11px',
                     color: idx < stepIndex ? '#16A34A' : idx === stepIndex ? '#1D4ED8' : '#64748B',
                   }}
                 >
@@ -158,16 +184,16 @@ export default function PlaybookSelector({ onSendStep }: Props) {
               ))}
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               {allDone ? (
                 <div
                   style={{
                     flex: 1,
                     textAlign: 'center',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     fontWeight: 600,
                     color: '#16A34A',
-                    padding: '8px',
+                    padding: '7px',
                     background: '#F0FDF4',
                     borderRadius: '6px',
                   }}
@@ -188,14 +214,14 @@ export default function PlaybookSelector({ onSendStep }: Props) {
                     color: '#FFFFFF',
                     border: 'none',
                     borderRadius: '6px',
-                    padding: '9px 12px',
-                    fontSize: '13px',
+                    padding: '8px 10px',
+                    fontSize: '12px',
                     fontWeight: 600,
                     cursor: 'pointer',
                   }}
                 >
                   Send Next Step
-                  <ChevronRight size={14} />
+                  <ChevronRight size={13} />
                 </button>
               )}
 
@@ -207,17 +233,45 @@ export default function PlaybookSelector({ onSendStep }: Props) {
                   background: 'transparent',
                   border: '1px solid #E2E8F0',
                   borderRadius: '6px',
-                  padding: '8px',
+                  padding: '7px',
                   cursor: 'pointer',
                   color: '#64748B',
                   display: 'flex',
                   alignItems: 'center',
                 }}
               >
-                <RotateCcw size={14} />
+                <RotateCcw size={13} />
               </button>
             </div>
           </>
+        )}
+
+        {/* Collapsed summary — shows current step inline */}
+        {selected && !stepsOpen && !allDone && (
+          <div
+            style={{
+              display: 'flex', gap: '8px', alignItems: 'center',
+              padding: '6px 8px', borderRadius: '6px',
+              background: '#DBEAFE', borderLeft: '3px solid #1D4ED8',
+              fontSize: '11px', color: '#1D4ED8',
+            }}
+          >
+            <span style={{ fontWeight: 700, flexShrink: 0 }}>{stepIndex + 1}.</span>
+            <span style={{ flex: 1, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {selected.steps[stepIndex]}
+            </span>
+            <button
+              type="button"
+              onClick={handleSendStep}
+              style={{
+                flexShrink: 0, background: '#1D4ED8', color: '#fff',
+                border: 'none', borderRadius: '5px',
+                padding: '4px 8px', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              Send
+            </button>
+          </div>
         )}
       </div>
     </div>
