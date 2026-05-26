@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Factory, Trash2, Bell } from 'lucide-react';
 import MatterportViewer from '@/components/MatterportViewer';
-import ModeSelector, { type ExpertMode } from '@/components/expert/ModeSelector';
+import { type ExpertMode } from '@/components/expert/ModeSelector';
+import FloatingModeBar from '@/components/expert/FloatingModeBar';
+import FloatingMirrorFab from '@/components/expert/FloatingMirrorFab';
 import MarkersList from '@/components/expert/MarkersList';
 import InstructionInput from '@/components/expert/InstructionInput';
-import MirrorViewToggle from '@/components/expert/MirrorViewToggle';
 import LaserOverlay from '@/components/expert/LaserOverlay';
 import HighlightZoneDrawer from '@/components/expert/HighlightZoneDrawer';
 import MarkerLabelDialog from '@/components/expert/MarkerLabelDialog';
@@ -532,7 +533,21 @@ export default function ExpertPage() {
             </div>
           )}
 
-          {/* Floating PTT FAB */}
+          {/* Floating mode selector — top-right */}
+          <FloatingModeBar mode={mode} onChange={handleModeChange} />
+
+          {/* Floating mirror FAB — top-left */}
+          <FloatingMirrorFab
+            driver={driver}
+            controlRequested={controlRequested}
+            onExpertDrive={handleExpertDrive}
+            onWorkerDrive={handleWorkerDrive}
+            onStopMirror={handleStopMirror}
+            onGrant={handleGrantControl}
+            onDeny={handleDenyControl}
+          />
+
+          {/* Floating PTT FAB — bottom-right */}
           <div
             style={{
               position: 'absolute',
@@ -593,9 +608,6 @@ export default function ExpertPage() {
               padding: '10px',
             }}
           >
-            {/* Mode */}
-            <ModeSelector mode={mode} onChange={handleModeChange} />
-
             {/* Playbooks */}
             <PlaybookSelector onSendStep={sendInstruction} />
 
@@ -605,16 +617,6 @@ export default function ExpertPage() {
             {/* Markers */}
             <MarkersList markers={markers} onRemove={removeMarker} onClearAll={clearMarkers} />
 
-            {/* Mirror View */}
-            <MirrorViewToggle
-              driver={driver}
-              controlRequested={controlRequested}
-              onExpertDrive={handleExpertDrive}
-              onWorkerDrive={handleWorkerDrive}
-              onStopMirror={handleStopMirror}
-              onGrant={handleGrantControl}
-              onDeny={handleDenyControl}
-            />
           </div>
 
           {/* Sticky danger bar — always visible at the bottom */}
