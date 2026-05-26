@@ -1,17 +1,18 @@
 /**
  * AI Summarization — post-session background worker
  *
- * Uses claude-3-5-haiku-20241022 to generate structured summaries of
- * completed support sessions. Called fire-and-forget from the socket server
- * immediately after session:end persists to DB.
+ * Uses claude-3-5-haiku-20241022 to generate structured, actionable
+ * troubleshooting guides from completed support sessions.
+ * Called fire-and-forget from the socket server after session:end.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import type { Instruction, PttChunk } from '../types/socket';
+import type { Instruction, PttChunk, PositionPing, Marker } from '../types/socket';
+
+export const AI_FAILED_MARKER = '__AI_FAILED__';
 
 const MODEL = 'claude-3-5-haiku-20241022';
 
 // Lazy client construction — env vars may not be loaded at module-eval time
-// (depends on import ordering vs dotenv/config). Reading at call time is robust.
 let _client: Anthropic | null = null;
 function getClient(): Anthropic {
   if (_client) return _client;
@@ -27,68 +28,140 @@ function getClient(): Anthropic {
 }
 
 // ── Context window guard ───────────────────────────────────────────────────
-// Keep combined log under ~40,000 chars (~10k tokens) to avoid waste on
-// extremely long sessions while staying well within the 200k context window.
-const MAX_CHARS = 40_000;
 const MAX_TRANSCRIPT_CHUNKS = 60;
-const MAX_INSTRUCTIONS = 80;
+const MAX_INSTRUCTIONS      = 80;
+const MAX_POSITIONS         = 20;   // keep breadcrumb concise for the model
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+/** Convert an absolute ms epoch to a human-readable offset string (+1m 15s) */
+export function relativeTimestamp(tsMs: number, startMs: number): string {
+  const diff = Math.max(0, Math.round((tsMs - startMs) / 1000));
+  const m = Math.floor(diff / 60);
+  const s = diff % 60;
+  return m > 0 ? `+${m}m ${s}s` : `+${s}s`;
+}
+
+/**
+ * Build a minimal JSON payload for the AI model.
+ * Keeps token count low while preserving all semantically relevant detail.
+ */
+function buildAiPayload(
+  params: SummarizeParams,
+  startMs: number,
+): object {
+  const { instructions, transcript, wasTruncated } = truncateLogs(
+    params.instructionLog,
+    params.transcriptLog,
+  );
+
+  // Chronological event log (instructions + PTT merged and sorted)
+  type EventEntry = { t: string; role: 'expert' | 'worker'; kind: 'instruction' | 'voice'; text: string };
+  const events: EventEntry[] = [];
+  for (const i of instructions) {
+    events.push({ t: relativeTimestamp(i.timestamp, startMs), role: 'expert', kind: 'instruction', text: i.text });
+  }
+  for (const c of transcript) {
+    events.push({ t: relativeTimestamp(c.startTs, startMs), role: 'worker', kind: 'voice', text: c.text });
+  }
+  events.sort((a, b) => {
+    // re-sort by original ms (approximation via startMs — enough for ordering)
+    return 0; // already sorted via pre-merge; preserve insertion order
+  });
+  // Re-sort properly: map back to ms
+  const instByText = new Map(instructions.map((i) => [i.text, i.timestamp]));
+  const transcrByText = new Map(transcript.map((c) => [c.text, c.startTs]));
+  events.sort((a, b) => {
+    const aMs = (a.kind === 'instruction' ? instByText.get(a.text) : transcrByText.get(a.text)) ?? 0;
+    const bMs = (b.kind === 'instruction' ? instByText.get(b.text) : transcrByText.get(b.text)) ?? 0;
+    return aMs - bMs;
+  });
+
+  // Markers (only label + location context)
+  const markerList = (params.markers ?? []).map((m, i) => {
+    const loc = [
+      m.floor !== undefined ? `floor ${m.floor}` : null,
+      m.sweepId ? `zone ${m.sweepId.slice(0, 6)}` : null,
+    ].filter(Boolean).join(', ');
+    return { n: i + 1, label: m.label ?? 'Unlabeled', ...(loc ? { location: loc } : {}) };
+  });
+
+  // Movement waypoints (sparse — show first, middle samples, last)
+  const positions = (params.positionLog ?? []).slice(0, MAX_POSITIONS);
+  const waypoints = positions.map((p) => ({
+    t: relativeTimestamp(p.ts, startMs),
+    zone: p.sweepId.slice(0, 8),
+    ...(p.floor !== undefined ? { floor: p.floor } : {}),
+  }));
+
+  const locationStr = [params.locationDept, params.locationLine, params.locationStation]
+    .filter(Boolean).join(' > ');
+
+  return {
+    machine:       params.machineLabel,
+    location:      locationStr || undefined,
+    resolved:      params.resolvedExpert === true || params.resolvedWorker === true,
+    safetyStop:    params.safetyTriggered,
+    truncated:     wasTruncated,
+    events,
+    markers:       markerList.length > 0 ? markerList : undefined,
+    movement:      waypoints.length > 0 ? waypoints : undefined,
+  };
+}
+
+// ── Truncation ─────────────────────────────────────────────────────────────
 
 function truncateLogs(
   instructions: Instruction[],
   transcript: PttChunk[],
 ): { instructions: Instruction[]; transcript: PttChunk[]; wasTruncated: boolean } {
-  let inst = instructions;
+  let inst  = instructions;
   let trans = transcript;
   let wasTruncated = false;
 
-  // Truncate transcript first (lower signal than instructions)
   if (trans.length > MAX_TRANSCRIPT_CHUNKS) {
     trans = trans.slice(-MAX_TRANSCRIPT_CHUNKS);
     wasTruncated = true;
   }
-
-  // If still too large, truncate instructions
-  const totalChars =
-    inst.reduce((s, i) => s + i.text.length, 0) +
-    trans.reduce((s, c) => s + c.text.length, 0);
-
-  if (totalChars > MAX_CHARS) {
+  if (inst.length > MAX_INSTRUCTIONS) {
     inst = inst.slice(-MAX_INSTRUCTIONS);
     wasTruncated = true;
   }
-
   return { instructions: inst, transcript: trans, wasTruncated };
 }
 
-// ── Merge + sort event log ─────────────────────────────────────────────────
-interface LogEntry {
-  ts:   number;
-  role: string;
-  type: 'instruction' | 'ptt';
-  text: string;
-}
+// ── System prompt ──────────────────────────────────────────────────────────
 
-function buildChronologicalLog(
-  instructions: Instruction[],
-  transcript: PttChunk[],
-): LogEntry[] {
-  const entries: LogEntry[] = [
-    ...instructions.map((i) => ({
-      ts:   i.timestamp,
-      role: 'expert',
-      type: 'instruction' as const,
-      text: i.text,
-    })),
-    ...transcript.map((c) => ({
-      ts:   c.startTs,
-      role: c.speakerId, // userId — treated as opaque identifier
-      type: 'ptt' as const,
-      text: c.text,
-    })),
-  ];
-  entries.sort((a, b) => a.ts - b.ts);
-  return entries;
-}
+const SYSTEM_PROMPT = `You are a technical expert creating precise, actionable troubleshooting guides for industrial machinery support sessions.
+
+Your job: turn raw session logs into a clear guide a factory technician can follow to reproduce or continue the repair.
+
+GOLDEN RULE — never write narrative about the session. Translate everything into direct, operative steps:
+  ❌ "The expert told the worker to check the pressure gauge."
+  ✅ "1. Check the pressure gauge on the cooling tank."
+
+OUTPUT FORMAT — always use exactly this structure (no extra sections):
+
+[If the issue was NOT resolved, start with this exact line:]
+❗ Note: This session did not fully resolve the issue. Use these steps as a starting point.
+
+[If an emergency stop was triggered, include:]
+⚠️ Safety Warning: [specific hazard and component involved, 1–2 sentences]
+
+Problem: [1–2 sentences describing the root issue as a technician would describe it]
+
+Steps:
+1. [Imperative action — be specific about the component, location, or reading]
+2. [Next step]
+...
+[Maximum 10 steps. Each step = 1 sentence. Include component names and physical locations from markers/movement when available.]
+
+Rules:
+- Use imperative verbs: Check, Replace, Verify, Tighten, Reset, Inspect
+- Reference marker labels and zone names when they add precision
+- No timestamps, no user IDs, no socket event language
+- Write for a technician who was not present — make it self-contained
+- Maximum 10 steps`;
 
 // ── Main export ────────────────────────────────────────────────────────────
 
@@ -99,70 +172,25 @@ export interface SummarizeParams {
   resolvedExpert:  boolean | null;
   resolvedWorker:  boolean | null;
   safetyTriggered: boolean;
+  // ── Epic 6: enriched context ────────────────────────────────────────────
+  locationDept?:    string | null;
+  locationLine?:    string | null;
+  locationStation?: string | null;
+  markers?:         Pick<Marker, 'id' | 'label' | 'sweepId' | 'floor'>[];
+  positionLog?:     Pick<PositionPing, 'ts' | 'sweepId' | 'floor'>[];
+  sessionStartMs?:  number;  // ms epoch — used to compute relative times
 }
 
 export async function generateSessionSummary(params: SummarizeParams): Promise<string> {
-  const { machineLabel, resolvedExpert, resolvedWorker, safetyTriggered } = params;
+  const startMs = params.sessionStartMs ?? 0;
+  const payload = buildAiPayload(params, startMs);
 
-  const { instructions, transcript, wasTruncated } = truncateLogs(
-    params.instructionLog,
-    params.transcriptLog,
-  );
-
-  const log = buildChronologicalLog(instructions, transcript);
-
-  const isResolved = resolvedExpert === true || resolvedWorker === true;
-
-  // ── System prompt ──────────────────────────────────────────────────────
-  const systemPrompt = `You are a technical documentation assistant for an industrial remote-support platform.
-Your task is to generate a concise, structured summary of a completed support session for a factory machine.
-
-Output format (always follow this exactly):
-1. If the session was NOT resolved by either party, start with exactly this line:
-   "❗ Note: This historical session did not fully resolve the issue, but is provided to show context on previously attempted steps."
-   Then a blank line.
-2. If the emergency/safety freeze button was activated at any point, start with (or insert after the unresolved note):
-   "⚠️ Safety Warning: [1-2 sentence description of the specific hazard inferred from the session context. Be specific about the component or area involved.]"
-   Then a blank line.
-3. Problem Statement: One concise paragraph (2-3 sentences) describing what the issue was.
-4. Execution Steps: A numbered list of the key steps taken, in chronological order.
-   - Keep each step brief (1 sentence max)
-   - Include only meaningful actions, not filler phrases
-   - Maximum 10 steps
-
-Do NOT include timestamps, user IDs, or raw socket event data in the output.
-Write in clear, professional English suitable for a factory technician.`;
-
-  // ── User message ───────────────────────────────────────────────────────
-  const truncationNote = wasTruncated
-    ? '[Note: session log was truncated to most recent entries due to session length]\n\n'
-    : '';
-
-  const logText = log.length > 0
-    ? log
-        .map((e) => `[${e.type === 'instruction' ? 'INSTRUCTION' : 'VOICE'}] ${e.text}`)
-        .join('\n')
-    : '(No events logged)';
-
-  const resolutionLine = isResolved
-    ? 'Resolution: RESOLVED (at least one party confirmed the issue was solved)'
-    : 'Resolution: NOT RESOLVED (neither party confirmed resolution)';
-
-  const safetyLine = safetyTriggered
-    ? 'Safety Override: YES — the emergency freeze button was activated during this session'
-    : 'Safety Override: No';
-
-  const userMessage = `Machine: ${machineLabel}
-${resolutionLine}
-${safetyLine}
-
-${truncationNote}Chronological event log:
-${logText}`;
+  const userMessage = `Session data (JSON):\n${JSON.stringify(payload, null, 2)}`;
 
   const response = await getClient().messages.create({
     model:      MODEL,
-    max_tokens: 512,
-    system:     systemPrompt,
+    max_tokens: 600,
+    system:     SYSTEM_PROMPT,
     messages:   [{ role: 'user', content: userMessage }],
   });
 

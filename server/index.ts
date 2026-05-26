@@ -695,8 +695,14 @@ async function triggerAiSummary(sessionId: string): Promise<void> {
     const transcriptLog: PttChunk[] = session.transcriptLog
       ? (JSON.parse(session.transcriptLog) as PttChunk[])
       : [];
+    const markerLog: Marker[] = session.markerLog
+      ? (JSON.parse(session.markerLog) as Marker[])
+      : [];
+    const positionLog: PositionPing[] = session.positionLog
+      ? (JSON.parse(session.positionLog) as PositionPing[])
+      : [];
 
-    console.log(`[ai]   session=${sessionId} machine="${machineLabel}" instructions=${instructionLog.length} transcript=${transcriptLog.length}`);
+    console.log(`[ai]   session=${sessionId} machine="${machineLabel}" instructions=${instructionLog.length} transcript=${transcriptLog.length} markers=${markerLog.length} positions=${positionLog.length}`);
 
     const t0 = Date.now();
     const summary = await generateSessionSummary({
@@ -706,6 +712,12 @@ async function triggerAiSummary(sessionId: string): Promise<void> {
       resolvedExpert:  session.resolvedExpert ?? null,
       resolvedWorker:  session.resolvedWorker ?? null,
       safetyTriggered: session.safetyTriggered,
+      locationDept:    session.locationDept,
+      locationLine:    session.locationLine,
+      locationStation: session.locationStation,
+      markers:         markerLog,
+      positionLog:     positionLog,
+      sessionStartMs:  session.startedAt.getTime(),
     });
     const elapsed = Date.now() - t0;
 
