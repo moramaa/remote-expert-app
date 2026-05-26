@@ -8,7 +8,7 @@ import LaserPointerDot from '@/components/worker/LaserPointerDot';
 import ActiveStepCard from '@/components/worker/ActiveStepCard';
 import WorkerZonesOverlay from '@/components/worker/WorkerZonesOverlay';
 import EmergencyFreezeOverlay from '@/components/worker/EmergencyFreezeOverlay';
-import WorkerMirrorToggle from '@/components/worker/WorkerMirrorToggle';
+import WorkerControlRequest from '@/components/worker/WorkerControlRequest';
 import PttButton from '@/components/shared/PttButton';
 import DriverIndicator from '@/components/shared/DriverIndicator';
 import ConnectionStatus from '@/components/shared/ConnectionStatus';
@@ -55,9 +55,10 @@ function WorkerPageInner() {
   const [syncedCamera, setSyncedCamera]   = useState<CameraState | null>(null);
   const [emergencyActive, setEmergencyActive] = useState(false);
   const [feedbackOpen, setFeedbackOpen]   = useState(false);
-  // Epic 5: bidirectional mirror
-  const [workerMirror, setWorkerMirror]   = useState(false);
+  // Epic 5: bidirectional mirror (worker no longer has a self-toggle)
   const [driver, setDriver]               = useState<'expert' | 'worker' | null>(null);
+  const [controlPending, setControlPending] = useState(false);
+  const [controlDenied,  setControlDenied]  = useState(false);
   // Epic 5: Expert PTT subtitle (auto-clears after 4s)
   const [expertPttSubtitle, setExpertPttSubtitle] = useState<string | null>(null);
   // Preview mode state
@@ -115,15 +116,12 @@ function WorkerPageInner() {
     setMarkers(previewData.markers);
   }, [isPreview, previewData, viewerReady]);
 
-  // ── Emit mirror-on / mirror-off when workerMirror changes ────────────────
-  useEffect(() => {
-    if (!socket || isPreview) return;
-    if (workerMirror) {
-      socket.emit('worker:mirror-on');
-    } else {
-      socket.emit('worker:mirror-off');
-    }
-  }, [workerMirror, socket, isPreview]);
+  // ── Worker requests camera control from expert ────────────────────────────
+  const handleRequestControl = useCallback(() => {
+    if (!socket || isPreview || controlPending) return;
+    setControlPending(true);
+    socket.emit('worker:request-control');
+  }, [socket, isPreview, controlPending]);
 
   // ── Stage 1: rebind socket to live session room after navigating in ──────
   useEffect(() => {
@@ -214,8 +212,20 @@ function WorkerPageInner() {
     };
 
     // Epic 5: mirror events
-    const onMirrorForcedOff = () => setWorkerMirror(false);
-    const onDriverChanged   = ({ driver: d }: { driver: 'expert' | 'worker' | null }) => setDriver(d);
+    const onMirrorForcedOff = () => { /* driver state updated via session:driver-changed */ };
+    const onDriverChanged   = ({ driver: d }: { driver: 'expert' | 'worker' | null }) => {
+      setDriver(d);
+      // If expert took control back, clear any pending state
+      if (d !== 'worker') setControlPending(false);
+    };
+    const onControlGranted  = () => {
+      setControlPending(false);
+      setControlDenied(false);
+    };
+    const onControlDenied   = () => {
+      setControlPending(false);
+      setControlDenied(true);
+    };
     const onExpertPtt       = (chunk: PttChunk) => setExpertPttSubtitle(chunk.text);
 
     socket.on('worker:sync-state',       onSync);
@@ -231,6 +241,8 @@ function WorkerPageInner() {
     socket.on('session:ended',           onSessionEnded);
     socket.on('worker:mirror-forced-off', onMirrorForcedOff);
     socket.on('session:driver-changed',  onDriverChanged);
+    socket.on('worker:control-granted',  onControlGranted);
+    socket.on('worker:control-denied',   onControlDenied);
     socket.on('worker:expert-ptt',       onExpertPtt);
 
     return () => {
@@ -247,6 +259,8 @@ function WorkerPageInner() {
       socket.off('session:ended',           onSessionEnded);
       socket.off('worker:mirror-forced-off', onMirrorForcedOff);
       socket.off('session:driver-changed',  onDriverChanged);
+      socket.off('worker:control-granted',  onControlGranted);
+      socket.off('worker:control-denied',   onControlDenied);
       socket.off('worker:expert-ptt',       onExpertPtt);
     };
   }, [socket, addSdkTag, isPreview]);
@@ -256,13 +270,13 @@ function WorkerPageInner() {
     (camera: CameraState) => {
       // Always remember the latest pose for breadcrumb pings
       currentPoseRef.current = camera;
-      if (!workerMirror || !socket || isPreview) return;
+      if (driver !== 'worker' || !socket || isPreview) return;
       const now = Date.now();
       if (now - lastCameraEmitRef.current < 100) return; // throttle to 100ms
       lastCameraEmitRef.current = now;
       socket.emit('worker:camera-sync', camera);
     },
-    [workerMirror, socket, isPreview],
+    [driver, socket, isPreview],
   );
 
   const handleStepDone = useCallback((instructionId: string) => {
@@ -436,14 +450,14 @@ function WorkerPageInner() {
         {/* Viewer */}
         <div style={{ position: 'relative', height: '50vh', minHeight: '280px', background: '#000' }}>
           <MatterportViewer
-            isReadOnly={!workerMirror}
+            isReadOnly={driver !== 'worker'}
             onSdkReady={(sdk) => {
               mpSdkRef.current = sdk;
               setViewerReady(true);
               setMarkers((prev) => [...prev]);
             }}
             onSweepChange={(sweep) => { currentSweepRef.current = sweep; }}
-            syncedCamera={isPreview ? null : (workerMirror ? null : syncedCamera)}
+            syncedCamera={isPreview ? null : (driver === 'worker' ? null : syncedCamera)}
             onCameraMove={handleCameraMove}
           >
             <WorkerZonesOverlay zones={zones} />
@@ -479,7 +493,12 @@ function WorkerPageInner() {
         {/* Controls + Step Card (live session only) */}
         <div style={{ flex: 1, padding: '12px', background: '#F8FAFC', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {!isPreview && (
-            <WorkerMirrorToggle enabled={workerMirror} onChange={setWorkerMirror} />
+            <WorkerControlRequest
+              driver={driver}
+              controlPending={controlPending}
+              controlDenied={controlDenied}
+              onRequest={handleRequestControl}
+            />
           )}
           {!isPreview && (
             <ActiveStepCard

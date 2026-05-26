@@ -113,6 +113,12 @@ interface SessionState {
   driver:            'expert' | 'worker' | null;  // who is driving the camera
   // ── Stage 1: worker breadcrumb trail ─────────────────────────────────────
   positionLog:       PositionPing[];
+  // ── Socket ID tracking — used for direct delivery of mirror/driver events ─
+  // Room-based broadcast alone can miss a peer when socket:bind-session hasn't
+  // completed yet (race between navigation and useEffect firing). Storing the
+  // two live socket IDs lets us deliver critical events both ways.
+  expertSocketId:    string | null;
+  workerSocketId:    string | null;
 }
 
 const sessions = new Map<string, SessionState>();
@@ -129,9 +135,43 @@ function getOrCreateSession(sessionId: string): SessionState {
       transcriptLog:     [],
       driver:            null,
       positionLog:       [],
+      expertSocketId:    null,
+      workerSocketId:    null,
     });
   }
   return sessions.get(sessionId)!;
+}
+
+/**
+ * Emit an event to every socket that belongs to `sessionId`.
+ * Combines room broadcast (for any sockets that are in the room) with direct
+ * delivery to the two stored socket IDs (handles timing gaps where a socket
+ * hasn't been room-bound yet).  Deduplication is inherent: Socket.IO won't
+ * deliver twice to the same socket even if it's both in the room and targeted
+ * directly.
+ */
+function emitToSession(
+  sessionId: string,
+  event: keyof ServerToClientEvents,
+  payload?: unknown,
+): void {
+  // Cast through unknown so TypeScript accepts the generic emit call
+  const emitOne = (target: ReturnType<typeof io.to>) => {
+    if (payload !== undefined) {
+      (target.emit as (ev: string, data: unknown) => void)(event, payload);
+    } else {
+      (target.emit as (ev: string) => void)(event);
+    }
+  };
+
+  emitOne(io.to(sessionId));
+
+  const st = sessions.get(sessionId);
+  if (!st) return;
+  // Direct delivery to the stored socket IDs as a reliable fallback
+  for (const sid of [st.expertSocketId, st.workerSocketId]) {
+    if (sid) emitOne(io.to(sid));
+  }
 }
 
 // ── Stage 1: DB-first session capture ────────────────────────────────────────
@@ -235,10 +275,17 @@ io.on('connection', (socket) => {
   // socket to the new room and update activeSessionId so subsequent events
   // write to the correct DB row instead of the 'demo' bucket.
   socket.on('socket:bind-session', ({ sessionId: newId }) => {
-    if (!newId || newId === activeSessionId) return;
+    if (!newId) return;
+    // Always record this socket's ID against its role in the session state —
+    // even if the room hasn't changed — so direct delivery paths stay current.
+    const st = getOrCreateSession(newId);
+    if (role === 'expert') st.expertSocketId = socket.id;
+    if (role === 'worker') st.workerSocketId = socket.id;
+
+    if (newId === activeSessionId) return; // already in the right room
     void socket.leave(activeSessionId);
     void socket.join(newId);
-    console.log(`[socket] ↻ rebind ${socket.id} | ${activeSessionId} → ${newId}`);
+    console.log(`[socket] ↻ rebind ${socket.id} | ${activeSessionId} → ${newId} role=${role}`);
     activeSessionId = newId;
     // Replay state if any has accumulated for the new room
     const replay = getOrCreateSession(activeSessionId);
@@ -368,6 +415,20 @@ io.on('connection', (socket) => {
         locationStation:  ticket.locationStation  ?? null,
       },
     }).catch((err: unknown) => console.warn('[db] session.create failed:', err));
+
+    // Pre-populate socket IDs so direct delivery works even before bind-session
+    const newSt = getOrCreateSession(newSessionId);
+    newSt.expertSocketId = socket.id;
+    newSt.workerSocketId = ticket.workerSocketId;
+
+    // Move the expert's socket into the new session room immediately
+    void socket.leave(activeSessionId);
+    void socket.join(newSessionId);
+    activeSessionId = newSessionId;
+
+    // Also move the worker's socket into the new session room immediately
+    const workerSock = io.sockets.sockets.get(ticket.workerSocketId);
+    if (workerSock) void workerSock.join(newSessionId);
 
     // Tell expert to navigate to the live session
     io.to(socket.id).emit('session:join', { sessionId: newSessionId, role: 'expert' });
@@ -523,8 +584,8 @@ io.on('connection', (socket) => {
   socket.on('expert:mirror-on', () => {
     const st = getOrCreateSession(activeSessionId);
     st.driver = 'expert';
-    io.to(activeSessionId).emit('session:driver-changed', { driver: 'expert' });
-    socket.to(activeSessionId).emit('worker:mirror-forced-off');
+    emitToSession(activeSessionId, 'session:driver-changed', { driver: 'expert' });
+    emitToSession(activeSessionId, 'worker:mirror-forced-off');
     console.log(`[mirror] expert is driving session=${activeSessionId}`);
   });
 
@@ -532,15 +593,15 @@ io.on('connection', (socket) => {
     const st = getOrCreateSession(activeSessionId);
     if (st.driver === 'expert') {
       st.driver = null;
-      io.to(activeSessionId).emit('session:driver-changed', { driver: null });
+      emitToSession(activeSessionId, 'session:driver-changed', { driver: null });
     }
   });
 
   socket.on('worker:mirror-on', () => {
     const st = getOrCreateSession(activeSessionId);
     st.driver = 'worker';
-    io.to(activeSessionId).emit('session:driver-changed', { driver: 'worker' });
-    socket.to(activeSessionId).emit('expert:mirror-forced-off');
+    emitToSession(activeSessionId, 'session:driver-changed', { driver: 'worker' });
+    emitToSession(activeSessionId, 'expert:mirror-forced-off');
     console.log(`[mirror] worker is driving session=${activeSessionId}`);
   });
 
@@ -548,7 +609,7 @@ io.on('connection', (socket) => {
     const st = getOrCreateSession(activeSessionId);
     if (st.driver === 'worker') {
       st.driver = null;
-      io.to(activeSessionId).emit('session:driver-changed', { driver: null });
+      emitToSession(activeSessionId, 'session:driver-changed', { driver: null });
     }
   });
 
@@ -556,8 +617,36 @@ io.on('connection', (socket) => {
     const st = getOrCreateSession(activeSessionId);
     if (st.driver === 'worker') {
       st.latestCamera = camera;
-      socket.to(activeSessionId).emit('expert:worker-camera', camera);
+      // Camera updates are high-frequency — emit only to the expert socket directly
+      const expertSid = st.expertSocketId;
+      if (expertSid) io.to(expertSid).emit('expert:worker-camera', camera);
+      else socket.to(activeSessionId).emit('expert:worker-camera', camera);
     }
+  });
+
+  // ── Control-transfer handshake ────────────────────────────────────────────
+
+  socket.on('worker:request-control', () => {
+    if (role !== 'worker') return;
+    // Use emitToSession so the notification reaches the expert via both the
+    // room broadcast AND direct socket delivery (handles room-membership gaps).
+    emitToSession(activeSessionId, 'expert:control-requested');
+    console.log(`[mirror] worker requested control session=${activeSessionId}`);
+  });
+
+  socket.on('expert:grant-control', () => {
+    if (role !== 'expert') return;
+    const st = getOrCreateSession(activeSessionId);
+    st.driver = 'worker';
+    emitToSession(activeSessionId, 'session:driver-changed', { driver: 'worker' });
+    emitToSession(activeSessionId, 'worker:control-granted');
+    console.log(`[mirror] expert granted control to worker session=${activeSessionId}`);
+  });
+
+  socket.on('expert:deny-control', () => {
+    if (role !== 'expert') return;
+    emitToSession(activeSessionId, 'worker:control-denied');
+    console.log(`[mirror] expert denied worker control request session=${activeSessionId}`);
   });
 
   // ── Disconnect ────────────────────────────────────────────────────────────
@@ -576,8 +665,11 @@ io.on('connection', (socket) => {
     if ((role === 'expert' && st.driver === 'expert') ||
         (role === 'worker' && st.driver === 'worker')) {
       st.driver = null;
-      io.to(activeSessionId).emit('session:driver-changed', { driver: null });
+      emitToSession(activeSessionId, 'session:driver-changed', { driver: null });
     }
+    // Clear the stored socket ID so stale IDs don't linger
+    if (role === 'expert' && st.expertSocketId === socket.id) st.expertSocketId = null;
+    if (role === 'worker' && st.workerSocketId === socket.id) st.workerSocketId = null;
 
     broadcastCount();
   });

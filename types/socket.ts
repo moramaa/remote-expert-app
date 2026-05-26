@@ -162,6 +162,14 @@ export interface ServerToClientEvents {
   'expert:mirror-forced-off': () => void;
   /** Sent to worker when expert takes over driving (worker must disable their toggle) */
   'worker:mirror-forced-off': () => void;
+
+  // ── Control-transfer handshake ────────────────────────────────────────────
+  /** Expert receives this when worker clicked "Request Control" */
+  'expert:control-requested': () => void;
+  /** Worker receives this when expert approved their request */
+  'worker:control-granted':   () => void;
+  /** Worker receives this when expert denied their request */
+  'worker:control-denied':    () => void;
 }
 
 export interface ClientToServerEvents {
@@ -204,6 +212,14 @@ export interface ClientToServerEvents {
   'worker:mirror-on':  () => void;
   /** Worker announces they are stopping driving */
   'worker:mirror-off': () => void;
+
+  // ── Control-transfer handshake ────────────────────────────────────────────
+  /** Worker asks expert to hand over control */
+  'worker:request-control': () => void;
+  /** Expert approves a pending worker control request */
+  'expert:grant-control':   () => void;
+  /** Expert denies a pending worker control request */
+  'expert:deny-control':    () => void;
 
   // ── Phase 2: availability + matching ─────────────────────────────────────
   /** Expert toggles their availability; sends current cert list */

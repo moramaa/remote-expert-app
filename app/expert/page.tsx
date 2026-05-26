@@ -44,7 +44,7 @@ export default function ExpertPage() {
   const [markers, setMarkers] = useState<Marker[]>([]);
   const [zones, setZones] = useState<HighlightZone[]>([]);
   const [sentInstructions, setSentInstructions] = useState<Instruction[]>([]);
-  const [mirrorView, setMirrorView] = useState(false);
+  // mirrorView replaced by driver state (expert drives ↔ worker drives ↔ off)
   const [viewerReady, setViewerReady] = useState(false);
   const [mpSdk, setMpSdk] = useState<MatterportSdk | null>(null);
   const [laser, setLaser] = useState<{ x: number; y: number } | null>(null);
@@ -57,6 +57,7 @@ export default function ExpertPage() {
   // Epic 5: bidirectional mirror
   const [syncedCamera, setSyncedCamera] = useState<CameraState | null>(null);
   const [driver, setDriver] = useState<'expert' | 'worker' | null>(null);
+  const [controlRequested, setControlRequested] = useState(false);
   // Epic 5: Worker PTT subtitle (auto-clears after 4s)
   const [workerPttSubtitle, setWorkerPttSubtitle] = useState<string | null>(null);
 
@@ -97,15 +98,33 @@ export default function ExpertPage() {
     };
   }, [workerPttSubtitle]);
 
-  // Emit mirror-on / mirror-off when mirrorView changes
-  useEffect(() => {
-    if (!socket) return;
-    if (mirrorView) {
-      socket.emit('expert:mirror-on');
-    } else {
-      socket.emit('expert:mirror-off');
-    }
-  }, [mirrorView, socket]);
+  // Mirror control handlers — apply state OPTIMISTICALLY so the UI responds
+  // immediately, then emit to server so the worker's view stays in sync.
+  const handleExpertDrive = useCallback(() => {
+    setDriver('expert');
+    socket?.emit('expert:mirror-on');
+  }, [socket]);
+
+  const handleWorkerDrive = useCallback(() => {
+    setDriver('worker');
+    socket?.emit('expert:grant-control');
+  }, [socket]);
+
+  const handleStopMirror = useCallback(() => {
+    setDriver(null);
+    socket?.emit('expert:mirror-off');
+  }, [socket]);
+
+  const handleGrantControl = useCallback(() => {
+    setControlRequested(false);
+    setDriver('worker');
+    socket?.emit('expert:grant-control');
+  }, [socket]);
+
+  const handleDenyControl = useCallback(() => {
+    setControlRequested(false);
+    socket?.emit('expert:deny-control');
+  }, [socket]);
 
   // ── Socket listeners ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -138,8 +157,11 @@ export default function ExpertPage() {
 
     // Epic 5: expert mirror was forced off (worker took over)
     const onMirrorForcedOff = () => {
-      setMirrorView(false);
-      // Note: mirror-off socket emit is handled by the mirrorView useEffect above
+      // driver state is updated via session:driver-changed; nothing extra needed
+    };
+
+    const onControlRequested = () => {
+      setControlRequested(true);
     };
 
     // Epic 5: who is driving
@@ -160,6 +182,7 @@ export default function ExpertPage() {
     socket.on('expert:mirror-forced-off',    onMirrorForcedOff);
     socket.on('session:driver-changed',      onDriverChanged);
     socket.on('expert:worker-ptt',           onWorkerPtt);
+    socket.on('expert:control-requested',    onControlRequested);
 
     return () => {
       socket.off('expert:step-done',            onStepDone);
@@ -170,6 +193,7 @@ export default function ExpertPage() {
       socket.off('expert:mirror-forced-off',    onMirrorForcedOff);
       socket.off('session:driver-changed',      onDriverChanged);
       socket.off('expert:worker-ptt',           onWorkerPtt);
+      socket.off('expert:control-requested',    onControlRequested);
     };
   }, [socket, sentInstructions]);
 
@@ -302,9 +326,9 @@ export default function ExpertPage() {
   // ----- Camera sync -----
   const handleCameraMove = useCallback(
     (camera: CameraState) => {
-      if (mirrorView) socket?.emit('expert:camera-sync', camera);
+      if (driver === 'expert') socket?.emit('expert:camera-sync', camera);
     },
-    [mirrorView, socket],
+    [driver, socket],
   );
 
   // ----- Laser -----
@@ -565,7 +589,15 @@ export default function ExpertPage() {
           </div>
           <InstructionInput recent={sentInstructions} onSend={(text) => sendInstruction(text)} />
           <MarkersList markers={markers} onRemove={removeMarker} onClearAll={clearMarkers} />
-          <MirrorViewToggle enabled={mirrorView} onChange={setMirrorView} />
+          <MirrorViewToggle
+            driver={driver}
+            controlRequested={controlRequested}
+            onExpertDrive={handleExpertDrive}
+            onWorkerDrive={handleWorkerDrive}
+            onStopMirror={handleStopMirror}
+            onGrant={handleGrantControl}
+            onDeny={handleDenyControl}
+          />
           <EmergencyFreezeButton onFreeze={handleEmergencyFreeze} acknowledged={emergencyAcknowledged} />
 
           {/* Clear controls */}
