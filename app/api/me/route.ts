@@ -25,5 +25,11 @@ export async function GET(request: NextRequest): Promise<Response> {
     return Response.json(worker);
   }
 
+  if (role === 'administrator') {
+    const admin = await prisma.administrator.findUnique({ where: { id } });
+    if (!admin) return Response.json({ error: 'Not found' }, { status: 404 });
+    return Response.json(admin);
+  }
+
   return Response.json({ error: 'Invalid role' }, { status: 400 });
 }

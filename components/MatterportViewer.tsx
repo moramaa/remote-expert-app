@@ -13,6 +13,12 @@ interface MatterportViewerProps {
   onIntersectionChange?: (intersection: MatterportIntersection | null) => void;
   onCameraMove?: (camera: CameraState) => void;
   onSdkReady?: (sdk: MatterportSdk) => void;
+  /**
+   * Fires whenever the active Matterport sweep changes (user moves through 3D).
+   * Used to enrich markers with sweepId/floor and to drive the worker's
+   * position-ping breadcrumb trail.
+   */
+  onSweepChange?: (sweep: { sweepId: string; floor?: number } | null) => void;
   syncedCamera?: CameraState | null;
   className?: string;
   children?: React.ReactNode;
@@ -25,6 +31,7 @@ export default function MatterportViewer({
   onIntersectionChange,
   onCameraMove,
   onSdkReady,
+  onSweepChange,
   syncedCamera,
   className,
   children,
@@ -40,10 +47,10 @@ export default function MatterportViewer({
   const spaceId = 'RXLkh8vriYF';
 
   // Stable callback refs so we don't re-init the viewer when parent re-renders
-  const cbsRef = useRef({ onIntersectionChange, onCameraMove, onSdkReady });
+  const cbsRef = useRef({ onIntersectionChange, onCameraMove, onSdkReady, onSweepChange });
   useEffect(() => {
-    cbsRef.current = { onIntersectionChange, onCameraMove, onSdkReady };
-  }, [onIntersectionChange, onCameraMove, onSdkReady]);
+    cbsRef.current = { onIntersectionChange, onCameraMove, onSdkReady, onSweepChange };
+  }, [onIntersectionChange, onCameraMove, onSdkReady, onSweepChange]);
 
   // Mount viewer once
   useEffect(() => {
@@ -75,6 +82,25 @@ export default function MatterportViewer({
               });
             } catch {
               // Pointer API not available in this SDK version
+            }
+
+            try {
+              // Stage 1: notify parent of sweep changes (used for marker enrichment + breadcrumbs)
+              const sdkAny = mpSdk as unknown as {
+                Sweep?: { current?: { subscribe(cb: (sweep: { sid?: string; floor?: { id?: string; sequence?: number } } | null) => void): void } };
+              };
+              sdkAny.Sweep?.current?.subscribe?.((sweep) => {
+                if (!sweep || !sweep.sid) {
+                  cbsRef.current.onSweepChange?.(null);
+                  return;
+                }
+                cbsRef.current.onSweepChange?.({
+                  sweepId: sweep.sid,
+                  floor:   sweep.floor?.sequence,
+                });
+              });
+            } catch {
+              // Sweep API not available
             }
 
             try {

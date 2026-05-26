@@ -34,7 +34,19 @@ model Session {
   durationSeconds Int?
   resolvedExpert  Boolean?  // true = Yes; false = No (expert's answer)
   resolvedWorker  Boolean?  // true = Yes; false = No (worker's answer)
-  summary         String?   // brief human-readable description of the resolved issue
+  summary         String?   // AI-generated summary (or "__AI_FAILED__" if generation failed)
+
+  // ── Session capture (Epic 5) ───────────────────────────────────────────────
+  safetyTriggered  Boolean  @default(false)  // emergency freeze was activated
+  markerLog        String?                   // JSON: Marker[] snapshot at session end
+  instructionLog   String?                   // JSON: Instruction[] all sent, chronological
+  transcriptLog    String?                   // JSON: PttChunk[] PTT voice chunks, chronological
+  positionLog      String?                   // JSON: PositionPing[] worker breadcrumb trail (Stage 1)
+
+  // ── Location at time of call (captured at ticket creation, not on Worker) ──
+  locationDept     String?  // e.g. "Packaging"
+  locationLine     String?  // e.g. "Line 3"
+  locationStation  String?  // e.g. "Station 12"
 }
 
 // ── Deflection analytics (Smart SOS Deflection flow) ───────────────────────
@@ -88,5 +100,13 @@ model Worker {
   name      String
   factory   String
   roleLevel String       // "junior_operator" | "maintenance" | "senior_operator"
+  createdAt DateTime @default(now())
+}
+
+// ── Administrator profile (Stage 1) ─────────────────────────────────────────
+
+model Administrator {
+  id        String   @id   // UUID from client localStorage
+  name      String
   createdAt DateTime @default(now())
 }

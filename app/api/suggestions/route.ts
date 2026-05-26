@@ -2,24 +2,28 @@ import { type NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
 export interface SuggestionDTO {
-  sessionId: string;
-  machineId: string;
-  summary: string;
+  sessionId:       string;
+  machineId:       string;
+  summary:         string | null;   // null = AI summary not yet generated
   durationSeconds: number;
-  resolvedAt: string; // ISO date string
+  resolvedAt:      string; // ISO date string
+  resolvedExpert:  boolean | null;
+  resolvedWorker:  boolean | null;
+  safetyTriggered: boolean;
 }
 
 /**
- * GET /api/suggestions?machineId=krones_filler&limit=3
+ * GET /api/suggestions?machineId=krones_filler&limit=5
  *
- * Returns the most recent successfully-resolved sessions for a machine,
- * filtered to those that have a non-empty summary (usable for deflection).
+ * Returns past sessions for a machine that have an AI-generated summary.
+ * Includes both resolved AND unresolved sessions (worker UI applies visual
+ * distinction). Resolved sessions are returned first.
  */
 export async function GET(req: NextRequest): Promise<Response> {
   const machineId = req.nextUrl.searchParams.get('machineId');
   const limit = Math.min(
-    parseInt(req.nextUrl.searchParams.get('limit') ?? '3', 10),
-    5,
+    parseInt(req.nextUrl.searchParams.get('limit') ?? '5', 10),
+    10,
   );
 
   if (!machineId) {
@@ -29,15 +33,15 @@ export async function GET(req: NextRequest): Promise<Response> {
   const sessions = await prisma.session.findMany({
     where: {
       machineId,
-      endedAt:      { not: null },
-      summary:      { not: null },
-      // At least one party confirmed the issue was resolved
-      OR: [
-        { resolvedExpert: true },
-        { resolvedWorker: true },
-      ],
+      endedAt: { not: null },
+      // Show all ended sessions — include those with pending or failed summaries
+      // The worker UI handles null / __AI_FAILED__ with appropriate placeholders
     },
-    orderBy: { endedAt: 'desc' },
+    orderBy: [
+      // Resolved sessions first, then by most recent
+      { resolvedExpert: 'desc' },
+      { endedAt: 'desc' },
+    ],
     take: limit,
     select: {
       id:              true,
@@ -45,15 +49,21 @@ export async function GET(req: NextRequest): Promise<Response> {
       summary:         true,
       durationSeconds: true,
       endedAt:         true,
+      resolvedExpert:  true,
+      resolvedWorker:  true,
+      safetyTriggered: true,
     },
   });
 
   const dto: SuggestionDTO[] = sessions.map((s) => ({
     sessionId:       s.id,
     machineId:       s.machineId,
-    summary:         s.summary ?? '',
+    summary:         s.summary ?? null,
     durationSeconds: s.durationSeconds ?? 0,
     resolvedAt:      (s.endedAt as Date).toISOString(),
+    resolvedExpert:  s.resolvedExpert ?? null,
+    resolvedWorker:  s.resolvedWorker ?? null,
+    safetyTriggered: s.safetyTriggered,
   }));
 
   return Response.json(dto);

@@ -13,17 +13,20 @@ import HighlightZoneDrawer from '@/components/expert/HighlightZoneDrawer';
 import MarkerLabelDialog from '@/components/expert/MarkerLabelDialog';
 import EmergencyFreezeButton from '@/components/expert/EmergencyFreezeButton';
 import PlaybookSelector from '@/components/expert/PlaybookSelector';
+import PttButton from '@/components/shared/PttButton';
+import DriverIndicator from '@/components/shared/DriverIndicator';
 import ConnectionStatus from '@/components/shared/ConnectionStatus';
 import StatusBar from '@/components/shared/StatusBar';
 import EndSessionButton from '@/components/shared/EndSessionButton';
 import SessionFeedbackModal from '@/components/shared/SessionFeedbackModal';
 import { useSocket } from '@/hooks/useSocket';
-import { getStoredRole, getStoredSessionId } from '@/lib/identity';
+import { getStoredRole, getStoredSessionId, getStoredUserId } from '@/lib/identity';
 import type {
   CameraState,
   HighlightZone,
   Instruction,
   Marker,
+  PttChunk,
 } from '@/types/socket';
 
 const STEM_SCALE = 0.3;
@@ -41,7 +44,7 @@ export default function ExpertPage() {
   const [markers, setMarkers] = useState<Marker[]>([]);
   const [zones, setZones] = useState<HighlightZone[]>([]);
   const [sentInstructions, setSentInstructions] = useState<Instruction[]>([]);
-  const [mirrorView, setMirrorView] = useState(false);
+  // mirrorView replaced by driver state (expert drives ↔ worker drives ↔ off)
   const [viewerReady, setViewerReady] = useState(false);
   const [mpSdk, setMpSdk] = useState<MatterportSdk | null>(null);
   const [laser, setLaser] = useState<{ x: number; y: number } | null>(null);
@@ -51,13 +54,32 @@ export default function ExpertPage() {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   // Notification banners for worker responses
   const [notification, setNotification] = useState<{ text: string; color: string } | null>(null);
+  // Epic 5: bidirectional mirror
+  const [syncedCamera, setSyncedCamera] = useState<CameraState | null>(null);
+  const [driver, setDriver] = useState<'expert' | 'worker' | null>(null);
+  const [controlRequested, setControlRequested] = useState(false);
+  // Epic 5: Worker PTT subtitle (auto-clears after 4s)
+  const [workerPttSubtitle, setWorkerPttSubtitle] = useState<string | null>(null);
 
   const viewerWrapperRef = useRef<HTMLDivElement>(null);
   const lastLaserEmitRef = useRef<number>(0);
   const lastIntersectionRef = useRef<MatterportIntersection | null>(null);
   const mpSdkRef = useRef<MatterportSdk | null>(null);
+  const workerPttTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stage 1: live current sweep, refreshed by MatterportViewer's onSweepChange
+  const currentSweepRef = useRef<{ sweepId: string; floor?: number } | null>(null);
 
   useEffect(() => { mpSdkRef.current = mpSdk; }, [mpSdk]);
+
+  // ── Stage 1: rebind socket to live session room after navigating in ──────
+  // The initial socket handshake may have used sessionId='demo' if this page
+  // mounted before localStorage was updated. This explicit bind guarantees
+  // markers/instructions/PTT events land in the right DB row.
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+    const stored = getStoredSessionId();
+    if (stored) socket.emit('socket:bind-session', { sessionId: stored });
+  }, [socket, isConnected]);
 
   // Auto-dismiss notification after 4s
   useEffect(() => {
@@ -66,7 +88,45 @@ export default function ExpertPage() {
     return () => clearTimeout(t);
   }, [notification]);
 
-  // ── Socket listeners for new events ────────────────────────────────────────
+  // Auto-dismiss worker PTT subtitle after 4s
+  useEffect(() => {
+    if (!workerPttSubtitle) return;
+    if (workerPttTimerRef.current) clearTimeout(workerPttTimerRef.current);
+    workerPttTimerRef.current = setTimeout(() => setWorkerPttSubtitle(null), 4000);
+    return () => {
+      if (workerPttTimerRef.current) clearTimeout(workerPttTimerRef.current);
+    };
+  }, [workerPttSubtitle]);
+
+  // Mirror control handlers — apply state OPTIMISTICALLY so the UI responds
+  // immediately, then emit to server so the worker's view stays in sync.
+  const handleExpertDrive = useCallback(() => {
+    setDriver('expert');
+    socket?.emit('expert:mirror-on');
+  }, [socket]);
+
+  const handleWorkerDrive = useCallback(() => {
+    setDriver('worker');
+    socket?.emit('expert:grant-control');
+  }, [socket]);
+
+  const handleStopMirror = useCallback(() => {
+    setDriver(null);
+    socket?.emit('expert:mirror-off');
+  }, [socket]);
+
+  const handleGrantControl = useCallback(() => {
+    setControlRequested(false);
+    setDriver('worker');
+    socket?.emit('expert:grant-control');
+  }, [socket]);
+
+  const handleDenyControl = useCallback(() => {
+    setControlRequested(false);
+    socket?.emit('expert:deny-control');
+  }, [socket]);
+
+  // ── Socket listeners ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
@@ -90,21 +150,50 @@ export default function ExpertPage() {
       setLastAction('Emergency acknowledged by worker');
     };
 
-    const onSessionEnded = () => {
-      // Peer ended the session — show our own feedback modal
-      setFeedbackOpen(true);
+    const onSessionEnded = () => { setFeedbackOpen(true); };
+
+    // Epic 5: worker camera relay (when worker is driving)
+    const onWorkerCamera = (camera: CameraState) => { setSyncedCamera(camera); };
+
+    // Epic 5: expert mirror was forced off (worker took over)
+    const onMirrorForcedOff = () => {
+      // driver state is updated via session:driver-changed; nothing extra needed
     };
 
-    socket.on('expert:step-done', onStepDone);
-    socket.on('expert:needs-clarification', onNeedsClarification);
+    const onControlRequested = () => {
+      setControlRequested(true);
+    };
+
+    // Epic 5: who is driving
+    const onDriverChanged = ({ driver: d }: { driver: 'expert' | 'worker' | null }) => {
+      setDriver(d);
+    };
+
+    // Epic 5: worker PTT subtitle
+    const onWorkerPtt = (chunk: PttChunk) => {
+      setWorkerPttSubtitle(chunk.text);
+    };
+
+    socket.on('expert:step-done',            onStepDone);
+    socket.on('expert:needs-clarification',  onNeedsClarification);
     socket.on('expert:emergency-acknowledged', onEmergencyAcknowledged);
-    socket.on('session:ended', onSessionEnded);
+    socket.on('session:ended',               onSessionEnded);
+    socket.on('expert:worker-camera',        onWorkerCamera);
+    socket.on('expert:mirror-forced-off',    onMirrorForcedOff);
+    socket.on('session:driver-changed',      onDriverChanged);
+    socket.on('expert:worker-ptt',           onWorkerPtt);
+    socket.on('expert:control-requested',    onControlRequested);
 
     return () => {
-      socket.off('expert:step-done', onStepDone);
-      socket.off('expert:needs-clarification', onNeedsClarification);
+      socket.off('expert:step-done',            onStepDone);
+      socket.off('expert:needs-clarification',  onNeedsClarification);
       socket.off('expert:emergency-acknowledged', onEmergencyAcknowledged);
-      socket.off('session:ended', onSessionEnded);
+      socket.off('session:ended',               onSessionEnded);
+      socket.off('expert:worker-camera',        onWorkerCamera);
+      socket.off('expert:mirror-forced-off',    onMirrorForcedOff);
+      socket.off('session:driver-changed',      onDriverChanged);
+      socket.off('expert:worker-ptt',           onWorkerPtt);
+      socket.off('expert:control-requested',    onControlRequested);
     };
   }, [socket, sentInstructions]);
 
@@ -161,6 +250,10 @@ export default function ExpertPage() {
           nz: normal.z,
           label: label.trim() || undefined,
           timestamp: Date.now(),
+          // Stage 1: Matterport SDK context
+          sweepId: currentSweepRef.current?.sweepId,
+          floor:   currentSweepRef.current?.floor,
+          placedBy: 'expert',
         };
         setMarkers((prev) => [...prev, marker]);
         socket?.emit('expert:place-marker', marker);
@@ -204,6 +297,15 @@ export default function ExpertPage() {
     [socket],
   );
 
+  // ----- PTT -----
+  const handlePttChunk = useCallback(
+    (chunk: PttChunk) => {
+      socket?.emit('expert:ptt-chunk', chunk);
+      setLastAction(`PTT: "${chunk.text.slice(0, 30)}…"`);
+    },
+    [socket],
+  );
+
   // ----- Zones -----
   const addZone = useCallback(
     (partial: Omit<HighlightZone, 'id' | 'timestamp'>) => {
@@ -224,9 +326,9 @@ export default function ExpertPage() {
   // ----- Camera sync -----
   const handleCameraMove = useCallback(
     (camera: CameraState) => {
-      if (mirrorView) socket?.emit('expert:camera-sync', camera);
+      if (driver === 'expert') socket?.emit('expert:camera-sync', camera);
     },
-    [mirrorView, socket],
+    [driver, socket],
   );
 
   // ----- Laser -----
@@ -282,12 +384,16 @@ export default function ExpertPage() {
   const handleFeedbackAnswer = useCallback(
     (resolved: boolean) => {
       socket?.emit('session:end', { resolved });
-      setFeedbackOpen(false);
-      const role = getStoredRole();
-      router.push(role === 'expert' ? '/dashboard/expert' : '/dashboard/worker');
+      // Modal stays open to show recording confirmation — navigation happens via onDone
     },
-    [socket, router],
+    [socket],
   );
+
+  const handleFeedbackDone = useCallback(() => {
+    setFeedbackOpen(false);
+    const role = getStoredRole();
+    router.push(role === 'expert' ? '/dashboard/expert' : '/dashboard/worker');
+  }, [router]);
 
   // ----- Clear All -----
   const clearAll = useCallback(async () => {
@@ -309,6 +415,7 @@ export default function ExpertPage() {
   );
 
   const sessionId = getStoredSessionId();
+  const userId = getStoredUserId() ?? '';
 
   return (
     <div style={{ display: 'flex', height: '100vh', flexDirection: 'column', background: '#F8FAFC', color: '#0F172A' }}>
@@ -335,6 +442,7 @@ export default function ExpertPage() {
               Space: RXLkh8vriYF
             </div>
           </div>
+          <DriverIndicator driver={driver} myRole="expert" />
         </div>
 
         {/* Notification banner */}
@@ -388,6 +496,8 @@ export default function ExpertPage() {
             onIntersectionChange={handleIntersectionChange}
             onCameraMove={handleCameraMove}
             onSdkReady={(sdk) => { setViewerReady(true); setMpSdk(sdk); }}
+            onSweepChange={(sweep) => { currentSweepRef.current = sweep; }}
+            syncedCamera={driver === 'worker' ? syncedCamera : null}
           >
             <HighlightZoneDrawer active={mode === 'highlight'} zones={zones} onComplete={addZone} />
             <LaserOverlay position={laser} />
@@ -421,6 +531,31 @@ export default function ExpertPage() {
               Hover over a surface · Press <strong>Space</strong> to place marker
             </div>
           )}
+
+          {/* Worker PTT subtitle */}
+          {workerPttSubtitle && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '48px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                background: 'rgba(217,119,6,0.92)',
+                color: '#fff',
+                fontSize: '13px',
+                fontWeight: 600,
+                padding: '6px 16px',
+                borderRadius: '20px',
+                zIndex: 20,
+                whiteSpace: 'nowrap',
+                maxWidth: '80%',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              🎙 Worker: {workerPttSubtitle}
+            </div>
+          )}
         </div>
 
         {/* Control panel */}
@@ -438,9 +573,31 @@ export default function ExpertPage() {
         >
           <ModeSelector mode={mode} onChange={handleModeChange} />
           <PlaybookSelector onSendStep={sendInstruction} />
+          {/* PTT Button */}
+          <div
+            style={{
+              padding: '10px 12px',
+              border: '1px solid #E2E8F0',
+              borderRadius: '8px',
+              background: '#FFFFFF',
+            }}
+          >
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+              Push-to-Talk
+            </div>
+            <PttButton speakerId={userId} onChunk={handlePttChunk} />
+          </div>
           <InstructionInput recent={sentInstructions} onSend={(text) => sendInstruction(text)} />
           <MarkersList markers={markers} onRemove={removeMarker} onClearAll={clearMarkers} />
-          <MirrorViewToggle enabled={mirrorView} onChange={setMirrorView} />
+          <MirrorViewToggle
+            driver={driver}
+            controlRequested={controlRequested}
+            onExpertDrive={handleExpertDrive}
+            onWorkerDrive={handleWorkerDrive}
+            onStopMirror={handleStopMirror}
+            onGrant={handleGrantControl}
+            onDeny={handleDenyControl}
+          />
           <EmergencyFreezeButton onFreeze={handleEmergencyFreeze} acknowledged={emergencyAcknowledged} />
 
           {/* Clear controls */}
@@ -484,7 +641,14 @@ export default function ExpertPage() {
       />
 
       {/* Session feedback modal */}
-      <SessionFeedbackModal open={feedbackOpen} onAnswer={handleFeedbackAnswer} />
+      <SessionFeedbackModal
+        open={feedbackOpen}
+        role="expert"
+        sessionId={sessionId}
+        onAnswer={handleFeedbackAnswer}
+        onDone={handleFeedbackDone}
+        onViewHistory={handleFeedbackDone}
+      />
     </div>
   );
 }

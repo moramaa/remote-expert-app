@@ -1,5 +1,16 @@
 // ── Phase 1: live-session data types ─────────────────────────────────────────
 
+// ── PTT (Push-to-Talk) voice chunk ───────────────────────────────────────────
+export interface PttChunk {
+  id:        string;
+  text:      string;
+  startTs:   number;  // ms epoch — when PTT button was pressed
+  endTs:     number;  // ms epoch — when PTT button was released
+  speakerId: string;  // userId of the speaker
+}
+
+
+
 export interface Marker {
   id: string;
   /** World-space anchor position (from Pointer.intersection.position) */
@@ -12,6 +23,27 @@ export interface Marker {
   nz: number;
   label?: string;
   timestamp: number;
+  // ── Stage 1: Matterport SDK context at placement time ─────────────────────
+  /** Active sweep id when marker was placed (mpSdk.Sweep.current) */
+  sweepId?: string;
+  /** Floor index from Sweep.current */
+  floor?:   number;
+  /** Which role placed this marker (expert is default since workers don't have placement UI today) */
+  placedBy?: 'expert' | 'worker';
+}
+
+// ── Position breadcrumb trail (Stage 1) ─────────────────────────────────────
+/**
+ * Periodic 3D-position snapshot emitted by the worker every 30 seconds
+ * (only when sweep or position changed since the last ping). Lets the
+ * call-history view show where the worker physically moved during the
+ * session, independent of marker placements.
+ */
+export interface PositionPing {
+  ts:       number;  // ms epoch
+  sweepId:  string;  // mpSdk.Sweep.current value
+  position: { x: number; y: number; z: number };
+  floor?:   number;
 }
 
 export interface Instruction {
@@ -114,6 +146,30 @@ export interface ServerToClientEvents {
   // ── Emergency ─────────────────────────────────────────────────────────────
   'worker:emergency-freeze':      () => void;
   'expert:emergency-acknowledged': () => void;
+
+  // ── PTT subtitles (relay to the other party) ──────────────────────────────
+  /** Worker's PTT chunk relayed to expert for live subtitle display */
+  'expert:worker-ptt':  (chunk: PttChunk) => void;
+  /** Expert's PTT chunk relayed to worker for live subtitle display */
+  'worker:expert-ptt':  (chunk: PttChunk) => void;
+
+  // ── Bi-directional Mirror View (Epic 5) ──────────────────────────────────
+  /** Worker's camera position relayed to expert when worker is driving */
+  'expert:worker-camera':    (camera: CameraState) => void;
+  /** Who is currently driving the shared camera view */
+  'session:driver-changed':  (payload: { driver: 'expert' | 'worker' | null }) => void;
+  /** Sent to expert when worker takes over driving (expert must disable their toggle) */
+  'expert:mirror-forced-off': () => void;
+  /** Sent to worker when expert takes over driving (worker must disable their toggle) */
+  'worker:mirror-forced-off': () => void;
+
+  // ── Control-transfer handshake ────────────────────────────────────────────
+  /** Expert receives this when worker clicked "Request Control" */
+  'expert:control-requested': () => void;
+  /** Worker receives this when expert approved their request */
+  'worker:control-granted':   () => void;
+  /** Worker receives this when expert denied their request */
+  'worker:control-denied':    () => void;
 }
 
 export interface ClientToServerEvents {
@@ -139,20 +195,71 @@ export interface ClientToServerEvents {
   'expert:emergency-freeze':      () => void;
   'worker:emergency-acknowledged': () => void;
 
+  // ── PTT (Push-to-Talk) ────────────────────────────────────────────────────
+  /** Expert submits a PTT transcript chunk (logged + relayed to worker as subtitle) */
+  'expert:ptt-chunk': (chunk: PttChunk) => void;
+  /** Worker submits a PTT transcript chunk (logged + relayed to expert as subtitle) */
+  'worker:ptt-chunk': (chunk: PttChunk) => void;
+
+  // ── Bi-directional Mirror View (Epic 5) ──────────────────────────────────
+  /** Worker emits their camera position when they are driving */
+  'worker:camera-sync': (camera: CameraState) => void;
+  /** Expert announces they are starting to drive */
+  'expert:mirror-on':  () => void;
+  /** Expert announces they are stopping driving */
+  'expert:mirror-off': () => void;
+  /** Worker announces they are starting to drive */
+  'worker:mirror-on':  () => void;
+  /** Worker announces they are stopping driving */
+  'worker:mirror-off': () => void;
+
+  // ── Control-transfer handshake ────────────────────────────────────────────
+  /** Worker asks expert to hand over control */
+  'worker:request-control': () => void;
+  /** Expert approves a pending worker control request */
+  'expert:grant-control':   () => void;
+  /** Expert denies a pending worker control request */
+  'expert:deny-control':    () => void;
+
   // ── Phase 2: availability + matching ─────────────────────────────────────
   /** Expert toggles their availability; sends current cert list */
   'expert:set-availability': (payload: { online: boolean; certificationIds: string[] }) => void;
   /** Worker opens an emergency SOS ticket */
-  'worker:sos-create':       (payload: { machineId: string; workerName: string; workerFactory: string }, callback: (result: SosAck) => void) => void;
+  'worker:sos-create': (
+    payload: {
+      machineId:       string;
+      workerName:      string;
+      workerFactory:   string;
+      locationDept?:   string;
+      locationLine?:   string;
+      locationStation?: string;
+    },
+    callback: (result: SosAck) => void,
+  ) => void;
   /** Worker cancels their open ticket */
   'worker:sos-cancel':       (payload: { ticketId: string }) => void;
   /** Expert accepts an incoming ticket */
   'expert:accept-ticket':    (payload: { ticketId: string; expertName: string }, callback: (result: AcceptAck) => void) => void;
+
+  // ── Stage 1: explicit session-room binding ───────────────────────────────
+  /**
+   * Client emits this after navigating into a live session so the server
+   * re-binds the socket to the correct room and DB row, regardless of what
+   * sessionId was in the initial handshake auth. Fixes the bug where sockets
+   * connected before session creation would write to the 'demo' bucket.
+   */
+  'socket:bind-session': (payload: { sessionId: string }) => void;
+
+  /**
+   * Periodic 3D breadcrumb ping from the worker. Server appends to
+   * Session.positionLog. Capped at 200 entries on the server side.
+   */
+  'worker:position-ping': (ping: PositionPing) => void;
 }
 
 /** Shape of socket.handshake.auth */
 export interface SocketAuthPayload {
   userId: string;
-  role: 'expert' | 'worker';
+  role: 'expert' | 'worker' | 'administrator';
   sessionId?: string; // present when joining an already-matched live session
 }
