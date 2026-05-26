@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock, AlertTriangle,
   Eye, RefreshCw, Loader2, History, ChevronRight,
-  MapPin, MessageSquare, Tag, Mic,
+  MapPin, MessageSquare, Tag, Mic, Map,
 } from 'lucide-react';
 import { getStoredUserId } from '@/lib/identity';
 import type { WorkerSessionDTO } from '@/app/api/sessions/worker-history/route';
@@ -29,6 +29,14 @@ function fmtTime(iso: string): string {
   return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
+/** Format milliseconds elapsed since `startMs` as "+0m 12s" */
+function fmtRelative(ts: number, startMs: number): string {
+  const diff = Math.max(0, Math.round((ts - startMs) / 1000));
+  const m = Math.floor(diff / 60);
+  const s = diff % 60;
+  return m > 0 ? `+${m}m ${s}s` : `+${s}s`;
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function WorkerHistoryPage() {
@@ -39,6 +47,7 @@ export default function WorkerHistoryPage() {
   const [loading,     setLoading]     = useState(true);
   const [expanded,    setExpanded]    = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState<string | null>(null);
+  const [movementOpen, setMovementOpen] = useState<string | null>(null);
 
   useEffect(() => {
     if (!workerId) { setLoading(false); return; }
@@ -266,7 +275,7 @@ export default function WorkerHistoryPage() {
                             </div>
                           )}
 
-                          {/* Tags / markers */}
+                          {/* Tags / markers (with sweep + floor context) */}
                           {s.markers.length > 0 && (
                             <div style={{ marginBottom: '14px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
@@ -275,26 +284,31 @@ export default function WorkerHistoryPage() {
                                   Tags placed ({s.markers.length})
                                 </div>
                               </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 {s.markers.map((m, idx) => (
-                                  <span
+                                  <div
                                     key={m.id}
                                     style={{
-                                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                      display: 'flex', alignItems: 'baseline', gap: '6px', flexWrap: 'wrap',
                                       background: '#FEF3C7', border: '1px solid #FCD34D',
-                                      borderRadius: '6px', padding: '4px 8px',
-                                      fontSize: '11px', color: '#78350F', fontWeight: 500,
+                                      borderRadius: '6px', padding: '5px 10px',
                                     }}
                                   >
-                                    <span style={{ fontWeight: 700, color: '#D97706' }}>#{idx + 1}</span>
-                                    {m.label}
-                                  </span>
+                                    <span style={{ fontWeight: 700, color: '#D97706', fontSize: '11px' }}>#{idx + 1}</span>
+                                    <span style={{ fontSize: '12px', color: '#78350F', fontWeight: 500 }}>{m.label}</span>
+                                    {(m.sweepId || m.floor !== undefined) && (
+                                      <span style={{ marginLeft: 'auto', fontSize: '10px', color: '#92400E', fontFamily: 'monospace' }}>
+                                        {m.sweepId ? `sweep ${m.sweepId.slice(0, 8)}` : ''}
+                                        {m.floor !== undefined ? ` · floor ${m.floor}` : ''}
+                                      </span>
+                                    )}
+                                  </div>
                                 ))}
                               </div>
                             </div>
                           )}
 
-                          {/* Expert's instructions */}
+                          {/* Expert's instructions with relative timestamps */}
                           {s.instructions.length > 0 && (
                             <div style={{ marginBottom: '14px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
@@ -307,6 +321,9 @@ export default function WorkerHistoryPage() {
                                 {s.instructions.map((ins) => (
                                   <li key={ins.id} style={{ fontSize: '12px', color: '#0F172A', lineHeight: 1.5 }}>
                                     {ins.text}
+                                    <span style={{ marginLeft: '6px', fontSize: '10px', color: '#94A3B8', fontFamily: 'monospace' }}>
+                                      {fmtRelative(ins.timestamp, new Date(s.startedAt).getTime())}
+                                    </span>
                                   </li>
                                 ))}
                               </ol>
@@ -330,10 +347,51 @@ export default function WorkerHistoryPage() {
                             </div>
                           )}
 
-                          {/* Empty-content note */}
-                          {s.markers.length === 0 && s.instructions.length === 0 && s.pttCount === 0 && (
+                          {/* Stage 1: Movement breadcrumb (collapsible) */}
+                          {s.positionLog.length > 0 && (() => {
+                            const isMovementOpen = movementOpen === s.sessionId;
+                            const sessionStartMs = new Date(s.startedAt).getTime();
+                            return (
+                              <div style={{ marginBottom: '14px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setMovementOpen(isMovementOpen ? null : s.sessionId)}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px',
+                                    width: '100%', background: '#FFFFFF',
+                                    border: '1px solid #E2E8F0', borderRadius: '6px',
+                                    padding: '6px 10px', cursor: 'pointer', textAlign: 'left',
+                                  }}
+                                >
+                                  <Map size={11} color="#64748B" />
+                                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#0F172A' }}>
+                                    {s.positionLog.length} movement event{s.positionLog.length !== 1 ? 's' : ''} recorded
+                                  </span>
+                                  <ChevronRight
+                                    size={12} color="#94A3B8"
+                                    style={{ marginLeft: 'auto', transform: isMovementOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}
+                                  />
+                                </button>
+                                {isMovementOpen && (
+                                  <ol style={{ margin: '6px 0 0', paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                    {s.positionLog.map((p, i) => (
+                                      <li key={i} style={{ fontSize: '11px', color: '#475569', fontFamily: 'monospace' }}>
+                                        <span style={{ color: '#94A3B8' }}>{fmtRelative(p.ts, sessionStartMs)}</span>
+                                        {' — sweep '}
+                                        <span style={{ color: '#0F172A' }}>{p.sweepId.slice(0, 8)}</span>
+                                        {p.floor !== undefined && <span style={{ color: '#94A3B8' }}>{' · floor '}{p.floor}</span>}
+                                      </li>
+                                    ))}
+                                  </ol>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Empty-content note (now also considers movement breadcrumb) */}
+                          {s.markers.length === 0 && s.instructions.length === 0 && s.pttCount === 0 && s.positionLog.length === 0 && (
                             <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#94A3B8', fontStyle: 'italic' }}>
-                              No markers, instructions, or voice messages were exchanged during this session.
+                              No markers, instructions, voice messages or movement were recorded during this session.
                             </p>
                           )}
 

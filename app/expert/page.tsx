@@ -65,8 +65,20 @@ export default function ExpertPage() {
   const lastIntersectionRef = useRef<MatterportIntersection | null>(null);
   const mpSdkRef = useRef<MatterportSdk | null>(null);
   const workerPttTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stage 1: live current sweep, refreshed by MatterportViewer's onSweepChange
+  const currentSweepRef = useRef<{ sweepId: string; floor?: number } | null>(null);
 
   useEffect(() => { mpSdkRef.current = mpSdk; }, [mpSdk]);
+
+  // ── Stage 1: rebind socket to live session room after navigating in ──────
+  // The initial socket handshake may have used sessionId='demo' if this page
+  // mounted before localStorage was updated. This explicit bind guarantees
+  // markers/instructions/PTT events land in the right DB row.
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+    const stored = getStoredSessionId();
+    if (stored) socket.emit('socket:bind-session', { sessionId: stored });
+  }, [socket, isConnected]);
 
   // Auto-dismiss notification after 4s
   useEffect(() => {
@@ -214,6 +226,10 @@ export default function ExpertPage() {
           nz: normal.z,
           label: label.trim() || undefined,
           timestamp: Date.now(),
+          // Stage 1: Matterport SDK context
+          sweepId: currentSweepRef.current?.sweepId,
+          floor:   currentSweepRef.current?.floor,
+          placedBy: 'expert',
         };
         setMarkers((prev) => [...prev, marker]);
         socket?.emit('expert:place-marker', marker);
@@ -456,6 +472,7 @@ export default function ExpertPage() {
             onIntersectionChange={handleIntersectionChange}
             onCameraMove={handleCameraMove}
             onSdkReady={(sdk) => { setViewerReady(true); setMpSdk(sdk); }}
+            onSweepChange={(sweep) => { currentSweepRef.current = sweep; }}
             syncedCamera={driver === 'worker' ? syncedCamera : null}
           >
             <HighlightZoneDrawer active={mode === 'highlight'} zones={zones} onComplete={addZone} />

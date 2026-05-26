@@ -2,8 +2,8 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Factory, HardHat } from 'lucide-react';
-import { getStoredRole, getStoredUserId, storeRole } from '@/lib/identity';
+import { Factory, HardHat, Shield } from 'lucide-react';
+import { getStoredRole, getStoredUserId, storeRole, type UserRole } from '@/lib/identity';
 
 export default function Home() {
   const router = useRouter();
@@ -17,7 +17,7 @@ export default function Home() {
     }
   }, [router]);
 
-  function select(role: 'expert' | 'worker'): void {
+  function select(role: UserRole): void {
     storeRole(role);
     router.push(`/onboarding/${role}`);
   }
@@ -141,6 +141,40 @@ export default function Home() {
               <div style={{ fontSize: '15px', fontWeight: 600, color: '#0F172A' }}>I&apos;m a Field Worker</div>
               <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
                 Request live expert guidance on-site
+              </div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => select('administrator')}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '12px',
+              border: '1px solid #E2E8F0',
+              background: '#FFFFFF',
+              padding: '32px 24px',
+              cursor: 'pointer',
+              borderRadius: '12px',
+              transition: 'border-color 0.15s, box-shadow 0.15s',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = '#1D4ED8';
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 0 3px #DBEAFE';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = '#E2E8F0';
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)';
+            }}
+          >
+            <Shield size={40} color="#1D4ED8" />
+            <div>
+              <div style={{ fontSize: '15px', fontWeight: 600, color: '#0F172A' }}>I&apos;m an Administrator</div>
+              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+                Manage and audit session records
               </div>
             </div>
           </button>

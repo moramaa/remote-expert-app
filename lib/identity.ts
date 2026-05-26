@@ -6,7 +6,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 
-export type UserRole = 'expert' | 'worker';
+export type UserRole = 'expert' | 'worker' | 'administrator';
 
 const STORAGE_KEYS = {
   userId:    'fieldsync:userId',
@@ -24,7 +24,7 @@ export function getStoredUserId(): string | null {
 export function getStoredRole(): UserRole | null {
   if (typeof window === 'undefined') return null;
   const v = localStorage.getItem(STORAGE_KEYS.role);
-  return v === 'expert' || v === 'worker' ? v : null;
+  return v === 'expert' || v === 'worker' || v === 'administrator' ? v : null;
 }
 
 export function getStoredSessionId(): string | null {

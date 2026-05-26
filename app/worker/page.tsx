@@ -64,6 +64,10 @@ function WorkerPageInner() {
   const [previewData, setPreviewData]     = useState<PreviewData | null>(null);
 
   const mpSdkRef    = useRef<MatterportSdk | null>(null);
+  // Stage 1: live current sweep + last position-ping fingerprint
+  const currentSweepRef   = useRef<{ sweepId: string; floor?: number } | null>(null);
+  const currentPoseRef    = useRef<CameraState | null>(null);
+  const lastPingedSweepRef = useRef<string | null>(null);
   const tagIdMapRef = useRef(new Map<string, string>());
   const syncedIdsRef = useRef(new Set<string>());
   const expertPttTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -120,6 +124,33 @@ function WorkerPageInner() {
       socket.emit('worker:mirror-off');
     }
   }, [workerMirror, socket, isPreview]);
+
+  // ── Stage 1: rebind socket to live session room after navigating in ──────
+  useEffect(() => {
+    if (!socket || !isConnected || isPreview) return;
+    const stored = getStoredSessionId();
+    if (stored) socket.emit('socket:bind-session', { sessionId: stored });
+  }, [socket, isConnected, isPreview]);
+
+  // ── Stage 1: breadcrumb position-ping every 30s when sweep changes ───────
+  useEffect(() => {
+    if (!socket || isPreview) return;
+    const interval = setInterval(() => {
+      const sweep = currentSweepRef.current;
+      const pose  = currentPoseRef.current;
+      if (!sweep || !pose) return;
+      // Skip if sweep hasn't changed since last ping (avoids identical entries)
+      if (sweep.sweepId === lastPingedSweepRef.current) return;
+      lastPingedSweepRef.current = sweep.sweepId;
+      socket.emit('worker:position-ping', {
+        ts: Date.now(),
+        sweepId:  sweep.sweepId,
+        position: pose.position,
+        floor:    sweep.floor,
+      });
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [socket, isPreview]);
 
   // ── Auto-dismiss expert PTT subtitle ─────────────────────────────────────
   useEffect(() => {
@@ -223,6 +254,8 @@ function WorkerPageInner() {
   // ── Camera emit when worker is driving ───────────────────────────────────
   const handleCameraMove = useCallback(
     (camera: CameraState) => {
+      // Always remember the latest pose for breadcrumb pings
+      currentPoseRef.current = camera;
       if (!workerMirror || !socket || isPreview) return;
       const now = Date.now();
       if (now - lastCameraEmitRef.current < 100) return; // throttle to 100ms
@@ -409,6 +442,7 @@ function WorkerPageInner() {
               setViewerReady(true);
               setMarkers((prev) => [...prev]);
             }}
+            onSweepChange={(sweep) => { currentSweepRef.current = sweep; }}
             syncedCamera={isPreview ? null : (workerMirror ? null : syncedCamera)}
             onCameraMove={handleCameraMove}
           >

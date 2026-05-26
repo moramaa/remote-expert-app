@@ -22,6 +22,7 @@ import type {
   Marker,
   Instruction,
   PttChunk,
+  PositionPing,
   LaserPointer,
   CameraState,
   HighlightZone,
@@ -110,6 +111,8 @@ interface SessionState {
   instructionLog:    Instruction[];
   transcriptLog:     PttChunk[];
   driver:            'expert' | 'worker' | null;  // who is driving the camera
+  // ── Stage 1: worker breadcrumb trail ─────────────────────────────────────
+  positionLog:       PositionPing[];
 }
 
 const sessions = new Map<string, SessionState>();
@@ -125,9 +128,61 @@ function getOrCreateSession(sessionId: string): SessionState {
       instructionLog:    [],
       transcriptLog:     [],
       driver:            null,
+      positionLog:       [],
     });
   }
   return sessions.get(sessionId)!;
+}
+
+// ── Stage 1: DB-first session capture ────────────────────────────────────────
+//
+// The Session DB row is the source of truth for captured content. The
+// in-memory SessionState is now a cache for live broadcasts and late-joiner
+// state replay only. Each event handler calls persistCapture(), which applies
+// the in-memory mutation immediately (so broadcasts stay accurate) and chains
+// a DB write after any previous write to the same session (coalesces rapid
+// mutations into a serial sequence — no race on the JSON read-modify-write).
+
+const pendingWrites = new Map<string, Promise<void>>();
+
+function persistCapture(sessionId: string | null, mutate: (s: SessionState) => void): void {
+  if (!sessionId || sessionId === 'demo') {
+    // No DB row exists for the demo bucket — only mutate in memory
+    const s = getOrCreateSession(sessionId ?? 'demo');
+    mutate(s);
+    return;
+  }
+
+  const s = getOrCreateSession(sessionId);
+  mutate(s);
+
+  const prev = pendingWrites.get(sessionId) ?? Promise.resolve();
+  const next = prev.then(() => writeCaptureToDb(sessionId, s));
+  pendingWrites.set(sessionId, next);
+  void next.finally(() => {
+    if (pendingWrites.get(sessionId) === next) pendingWrites.delete(sessionId);
+  });
+}
+
+async function writeCaptureToDb(sessionId: string, s: SessionState): Promise<void> {
+  try {
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: {
+        markerLog:       JSON.stringify(Array.from(s.markers.values())),
+        instructionLog:  JSON.stringify(s.instructionLog),
+        transcriptLog:   JSON.stringify(s.transcriptLog),
+        positionLog:     JSON.stringify(s.positionLog),
+        safetyTriggered: s.safetyTriggered,
+      },
+    });
+  } catch (err) {
+    const code = (err as { code?: string })?.code;
+    // P2025 = "record not found" — happens for transient/demo sessions, ignore
+    if (code !== 'P2025') {
+      console.warn(`[capture] persist failed session=${sessionId}:`, err);
+    }
+  }
 }
 
 function sessionSnapshot(s: SessionState): SyncState {
@@ -149,29 +204,52 @@ function broadcastCount(): void {
 
 io.on('connection', (socket) => {
   const auth = socket.handshake.auth as Partial<SocketAuthPayload>;
-  const userId    = auth.userId    ?? 'anonymous';
-  const role      = auth.role      ?? 'worker';
-  const sessionId = auth.sessionId ?? 'demo';
+  const userId  = auth.userId ?? 'anonymous';
+  const role    = auth.role   ?? 'worker';
+  // activeSessionId is MUTABLE — gets reassigned by 'socket:bind-session'
+  // when the client navigates into a live session. This prevents events from
+  // accumulating in the 'demo' bucket after a session is created.
+  let activeSessionId: string = auth.sessionId ?? 'demo';
 
-  console.log(`[socket] + ${socket.id} | role=${role} userId=${userId} session=${sessionId}`);
+  console.log(`[socket] + ${socket.id} | role=${role} userId=${userId} session=${activeSessionId}`);
 
-  // Join the session room
-  void socket.join(sessionId);
+  // Join the initial session room (may be 'demo' until rebound)
+  void socket.join(activeSessionId);
 
   broadcastCount();
 
   // Replay current session state to late-joiners
-  const s = getOrCreateSession(sessionId);
-  const snap = sessionSnapshot(s);
-  const hasState =
-    snap.markers.length > 0 ||
-    snap.zones.length > 0 ||
-    snap.latestInstruction !== null ||
-    snap.camera !== null;
-
-  if (hasState) {
-    socket.emit('worker:sync-state', snap);
+  {
+    const replay = getOrCreateSession(activeSessionId);
+    const snap = sessionSnapshot(replay);
+    const hasState =
+      snap.markers.length > 0 ||
+      snap.zones.length > 0 ||
+      snap.latestInstruction !== null ||
+      snap.camera !== null;
+    if (hasState) socket.emit('worker:sync-state', snap);
   }
+
+  // ── Stage 1: explicit session rebind ──────────────────────────────────────
+  // Client emits this after navigating into a live session room. Re-bind the
+  // socket to the new room and update activeSessionId so subsequent events
+  // write to the correct DB row instead of the 'demo' bucket.
+  socket.on('socket:bind-session', ({ sessionId: newId }) => {
+    if (!newId || newId === activeSessionId) return;
+    void socket.leave(activeSessionId);
+    void socket.join(newId);
+    console.log(`[socket] ↻ rebind ${socket.id} | ${activeSessionId} → ${newId}`);
+    activeSessionId = newId;
+    // Replay state if any has accumulated for the new room
+    const replay = getOrCreateSession(activeSessionId);
+    const snap = sessionSnapshot(replay);
+    if (
+      snap.markers.length > 0 || snap.zones.length > 0 ||
+      snap.latestInstruction !== null || snap.camera !== null
+    ) {
+      socket.emit('worker:sync-state', snap);
+    }
+  });
 
   // ── Phase 2: expert comes online ──────────────────────────────────────────
 
@@ -277,6 +355,7 @@ io.on('connection', (socket) => {
     }
 
     // Persist session record to DB (include location captured at ticket creation)
+    console.log(`[db] creating session ${newSessionId} location=${JSON.stringify({ dept: ticket.locationDept, line: ticket.locationLine, station: ticket.locationStation })}`);
     void prisma.session.create({
       data: {
         id:               newSessionId,
@@ -311,49 +390,54 @@ io.on('connection', (socket) => {
     ack({ sessionId: newSessionId });
   });
 
-  // ── Phase 1: expert → session state + broadcast ───────────────────────────
+  // ── Phase 1: expert → session state + broadcast + DB persist ──────────────
 
   socket.on('expert:place-marker', (marker: Marker) => {
-    s.markers.set(marker.id, marker);
-    socket.to(sessionId).emit('worker:new-marker', marker);
+    persistCapture(activeSessionId, (st) => { st.markers.set(marker.id, marker); });
+    socket.to(activeSessionId).emit('worker:new-marker', marker);
   });
 
   socket.on('expert:remove-marker', (markerId: string) => {
-    s.markers.delete(markerId);
-    socket.to(sessionId).emit('worker:remove-marker', markerId);
+    persistCapture(activeSessionId, (st) => { st.markers.delete(markerId); });
+    socket.to(activeSessionId).emit('worker:remove-marker', markerId);
   });
 
   socket.on('expert:clear-markers', () => {
-    s.markers.clear();
-    socket.to(sessionId).emit('worker:clear-markers');
+    persistCapture(activeSessionId, (st) => { st.markers.clear(); });
+    socket.to(activeSessionId).emit('worker:clear-markers');
   });
 
   socket.on('expert:send-instruction', (instruction: Instruction) => {
-    s.latestInstruction = instruction;
-    s.instructionLog.push(instruction);  // accumulate for AI summarization
-    socket.to(sessionId).emit('worker:instruction', instruction);
+    persistCapture(activeSessionId, (st) => {
+      st.latestInstruction = instruction;
+      st.instructionLog.push(instruction);
+    });
+    socket.to(activeSessionId).emit('worker:instruction', instruction);
   });
 
   socket.on('expert:laser-pointer', (position: LaserPointer | null) => {
-    socket.to(sessionId).emit('worker:laser-pointer', position);
+    // Live-only event — not persisted
+    socket.to(activeSessionId).emit('worker:laser-pointer', position);
   });
 
   socket.on('expert:camera-sync', (camera: CameraState) => {
-    // Only relay if expert is currently the driver (or driver is unset / default)
-    if (s.driver === null || s.driver === 'expert') {
-      s.latestCamera = camera;
-      socket.to(sessionId).emit('worker:camera-sync', camera);
+    const st = getOrCreateSession(activeSessionId);
+    if (st.driver === null || st.driver === 'expert') {
+      st.latestCamera = camera;
+      socket.to(activeSessionId).emit('worker:camera-sync', camera);
     }
   });
 
   socket.on('expert:highlight-zone', (zone: HighlightZone) => {
-    s.zones.set(zone.id, zone);
-    socket.to(sessionId).emit('worker:highlight-zone', zone);
+    const st = getOrCreateSession(activeSessionId);
+    st.zones.set(zone.id, zone);
+    socket.to(activeSessionId).emit('worker:highlight-zone', zone);
   });
 
   socket.on('expert:clear-zones', () => {
-    s.zones.clear();
-    socket.to(sessionId).emit('worker:clear-zones');
+    const st = getOrCreateSession(activeSessionId);
+    st.zones.clear();
+    socket.to(activeSessionId).emit('worker:clear-zones');
   });
 
   // ── Session lifecycle ─────────────────────────────────────────────────────
@@ -361,15 +445,11 @@ io.on('connection', (socket) => {
   socket.on('session:end', ({ resolved }) => {
     const isExpert = role === 'expert';
     const now = new Date();
+    const endingSessionId = activeSessionId;
 
-    // Snapshot session capture data before the async chain
-    const markerLog       = JSON.stringify(Array.from(s.markers.values()));
-    const instructionLog  = JSON.stringify(s.instructionLog);
-    const transcriptLog   = JSON.stringify(s.transcriptLog);
-    const safetyTriggered = s.safetyTriggered;
-
-    // Update the DB record (fire-and-forget; don't block the event loop)
-    void prisma.session.findUnique({ where: { id: sessionId } })
+    // Capture state has already been persisted incrementally — at session:end
+    // we only need to set endedAt, durationSeconds, and resolution flags.
+    void prisma.session.findUnique({ where: { id: endingSessionId } })
       .then((existing: Awaited<ReturnType<typeof prisma.session.findUnique>>) => {
         if (!existing) return;
         const durationSeconds = existing.startedAt
@@ -377,103 +457,106 @@ io.on('connection', (socket) => {
           : undefined;
         const isFirstEnd = !existing.endedAt;
         return prisma.session.update({
-          where: { id: sessionId },
+          where: { id: endingSessionId },
           data: {
             ...(isExpert ? { resolvedExpert: resolved } : { resolvedWorker: resolved }),
-            // Only write session capture data + endedAt on the FIRST end received
-            ...(isFirstEnd ? {
-              endedAt:        now,
-              durationSeconds,
-              markerLog,
-              instructionLog,
-              transcriptLog,
-              safetyTriggered,
-            } : {}),
+            ...(isFirstEnd ? { endedAt: now, durationSeconds } : {}),
           },
         }).then(() => {
-          // Trigger AI summarization after the first end persists
-          if (isFirstEnd) {
-            triggerAiSummary(sessionId);
-          }
+          if (isFirstEnd) triggerAiSummary(endingSessionId);
         });
       })
       .catch((err: unknown) => console.warn('[db] session.end update failed:', err));
 
-    // Notify the other party so they can show their own feedback modal
-    socket.to(sessionId).emit('session:ended', { endedBy: isExpert ? 'expert' : 'worker' });
-
-    console.log(`[session] ${role} ended session=${sessionId} resolved=${resolved}`);
+    socket.to(activeSessionId).emit('session:ended', { endedBy: isExpert ? 'expert' : 'worker' });
+    console.log(`[session] ${role} ended session=${activeSessionId} resolved=${resolved}`);
   });
 
   // ── Worker acknowledgement events ─────────────────────────────────────────
 
   socket.on('worker:step-done', (payload) => {
-    socket.to(sessionId).emit('expert:step-done', payload);
+    socket.to(activeSessionId).emit('expert:step-done', payload);
   });
 
   socket.on('worker:needs-clarification', (payload) => {
-    socket.to(sessionId).emit('expert:needs-clarification', payload);
+    socket.to(activeSessionId).emit('expert:needs-clarification', payload);
   });
 
   // ── Emergency freeze ──────────────────────────────────────────────────────
 
   socket.on('expert:emergency-freeze', () => {
-    s.safetyTriggered = true;  // flag for AI summarizer
-    console.log(`[emergency] expert triggered freeze on session=${sessionId}`);
-    socket.to(sessionId).emit('worker:emergency-freeze');
+    persistCapture(activeSessionId, (st) => { st.safetyTriggered = true; });
+    console.log(`[emergency] expert triggered freeze on session=${activeSessionId}`);
+    socket.to(activeSessionId).emit('worker:emergency-freeze');
   });
 
   socket.on('worker:emergency-acknowledged', () => {
-    console.log(`[emergency] worker acknowledged on session=${sessionId}`);
-    socket.to(sessionId).emit('expert:emergency-acknowledged');
+    console.log(`[emergency] worker acknowledged on session=${activeSessionId}`);
+    socket.to(activeSessionId).emit('expert:emergency-acknowledged');
   });
 
-  // ── PTT (Push-to-Talk) ────────────────────────────────────────────────────
+  // ── PTT (Push-to-Talk) — persisted to transcriptLog ──────────────────────
 
   socket.on('expert:ptt-chunk', (chunk: PttChunk) => {
-    s.transcriptLog.push(chunk);
-    socket.to(sessionId).emit('worker:expert-ptt', chunk);  // live subtitle for worker
+    persistCapture(activeSessionId, (st) => { st.transcriptLog.push(chunk); });
+    socket.to(activeSessionId).emit('worker:expert-ptt', chunk);
   });
 
   socket.on('worker:ptt-chunk', (chunk: PttChunk) => {
-    s.transcriptLog.push(chunk);
-    socket.to(sessionId).emit('expert:worker-ptt', chunk);  // live subtitle for expert
+    persistCapture(activeSessionId, (st) => { st.transcriptLog.push(chunk); });
+    socket.to(activeSessionId).emit('expert:worker-ptt', chunk);
+  });
+
+  // ── Stage 1: worker breadcrumb trail — persisted to positionLog ──────────
+
+  socket.on('worker:position-ping', (ping: PositionPing) => {
+    if (role !== 'worker') return;
+    persistCapture(activeSessionId, (st) => {
+      st.positionLog.push(ping);
+      // Cap at 200 entries — older sessions don't need infinite precision
+      if (st.positionLog.length > 200) st.positionLog.shift();
+    });
   });
 
   // ── Bi-directional Mirror View ────────────────────────────────────────────
 
   socket.on('expert:mirror-on', () => {
-    s.driver = 'expert';
-    io.to(sessionId).emit('session:driver-changed', { driver: 'expert' });
-    socket.to(sessionId).emit('worker:mirror-forced-off');
-    console.log(`[mirror] expert is driving session=${sessionId}`);
+    const st = getOrCreateSession(activeSessionId);
+    st.driver = 'expert';
+    io.to(activeSessionId).emit('session:driver-changed', { driver: 'expert' });
+    socket.to(activeSessionId).emit('worker:mirror-forced-off');
+    console.log(`[mirror] expert is driving session=${activeSessionId}`);
   });
 
   socket.on('expert:mirror-off', () => {
-    if (s.driver === 'expert') {
-      s.driver = null;
-      io.to(sessionId).emit('session:driver-changed', { driver: null });
+    const st = getOrCreateSession(activeSessionId);
+    if (st.driver === 'expert') {
+      st.driver = null;
+      io.to(activeSessionId).emit('session:driver-changed', { driver: null });
     }
   });
 
   socket.on('worker:mirror-on', () => {
-    s.driver = 'worker';
-    io.to(sessionId).emit('session:driver-changed', { driver: 'worker' });
-    socket.to(sessionId).emit('expert:mirror-forced-off');
-    console.log(`[mirror] worker is driving session=${sessionId}`);
+    const st = getOrCreateSession(activeSessionId);
+    st.driver = 'worker';
+    io.to(activeSessionId).emit('session:driver-changed', { driver: 'worker' });
+    socket.to(activeSessionId).emit('expert:mirror-forced-off');
+    console.log(`[mirror] worker is driving session=${activeSessionId}`);
   });
 
   socket.on('worker:mirror-off', () => {
-    if (s.driver === 'worker') {
-      s.driver = null;
-      io.to(sessionId).emit('session:driver-changed', { driver: null });
+    const st = getOrCreateSession(activeSessionId);
+    if (st.driver === 'worker') {
+      st.driver = null;
+      io.to(activeSessionId).emit('session:driver-changed', { driver: null });
     }
   });
 
   socket.on('worker:camera-sync', (camera: CameraState) => {
-    if (s.driver === 'worker') {
-      s.latestCamera = camera;
-      socket.to(sessionId).emit('expert:worker-camera', camera);
+    const st = getOrCreateSession(activeSessionId);
+    if (st.driver === 'worker') {
+      st.latestCamera = camera;
+      socket.to(activeSessionId).emit('expert:worker-camera', camera);
     }
   });
 
@@ -489,10 +572,11 @@ io.on('connection', (socket) => {
     }
 
     // If the disconnected party was driving, reset driver state
-    if ((role === 'expert' && s.driver === 'expert') ||
-        (role === 'worker' && s.driver === 'worker')) {
-      s.driver = null;
-      io.to(sessionId).emit('session:driver-changed', { driver: null });
+    const st = getOrCreateSession(activeSessionId);
+    if ((role === 'expert' && st.driver === 'expert') ||
+        (role === 'worker' && st.driver === 'worker')) {
+      st.driver = null;
+      io.to(activeSessionId).emit('session:driver-changed', { driver: null });
     }
 
     broadcastCount();

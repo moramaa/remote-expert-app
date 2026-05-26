@@ -23,6 +23,27 @@ export interface Marker {
   nz: number;
   label?: string;
   timestamp: number;
+  // ── Stage 1: Matterport SDK context at placement time ─────────────────────
+  /** Active sweep id when marker was placed (mpSdk.Sweep.current) */
+  sweepId?: string;
+  /** Floor index from Sweep.current */
+  floor?:   number;
+  /** Which role placed this marker (expert is default since workers don't have placement UI today) */
+  placedBy?: 'expert' | 'worker';
+}
+
+// ── Position breadcrumb trail (Stage 1) ─────────────────────────────────────
+/**
+ * Periodic 3D-position snapshot emitted by the worker every 30 seconds
+ * (only when sweep or position changed since the last ping). Lets the
+ * call-history view show where the worker physically moved during the
+ * session, independent of marker placements.
+ */
+export interface PositionPing {
+  ts:       number;  // ms epoch
+  sweepId:  string;  // mpSdk.Sweep.current value
+  position: { x: number; y: number; z: number };
+  floor?:   number;
 }
 
 export interface Instruction {
@@ -203,11 +224,26 @@ export interface ClientToServerEvents {
   'worker:sos-cancel':       (payload: { ticketId: string }) => void;
   /** Expert accepts an incoming ticket */
   'expert:accept-ticket':    (payload: { ticketId: string; expertName: string }, callback: (result: AcceptAck) => void) => void;
+
+  // ── Stage 1: explicit session-room binding ───────────────────────────────
+  /**
+   * Client emits this after navigating into a live session so the server
+   * re-binds the socket to the correct room and DB row, regardless of what
+   * sessionId was in the initial handshake auth. Fixes the bug where sockets
+   * connected before session creation would write to the 'demo' bucket.
+   */
+  'socket:bind-session': (payload: { sessionId: string }) => void;
+
+  /**
+   * Periodic 3D breadcrumb ping from the worker. Server appends to
+   * Session.positionLog. Capped at 200 entries on the server side.
+   */
+  'worker:position-ping': (ping: PositionPing) => void;
 }
 
 /** Shape of socket.handshake.auth */
 export interface SocketAuthPayload {
   userId: string;
-  role: 'expert' | 'worker';
+  role: 'expert' | 'worker' | 'administrator';
   sessionId?: string; // present when joining an already-matched live session
 }
