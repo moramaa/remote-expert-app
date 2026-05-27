@@ -4,8 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle, ChevronRight, Clock, CheckCircle2,
-  XCircle, Search, X, Loader2, Users, MapPin, Eye,
-  RefreshCw,
+  XCircle, Search, X, Loader2, Users, MapPin, Eye, Sparkles,
 } from 'lucide-react';
 import { MACHINES, MACHINE_MAP } from '@/lib/machines';
 import type { SuggestionDTO } from '@/app/api/suggestions/route';
@@ -227,7 +226,6 @@ function SuggestionsStep({
   const [expanded, setExpanded]       = useState<string | null>(null);
   const [answered, setAnswered]       = useState<string | null>(null);
   const [submitting, setSubmitting]   = useState(false);
-  const [regenerating, setRegenerating] = useState<string | null>(null);
 
   const machine = MACHINE_MAP.get(machineId);
 
@@ -265,18 +263,6 @@ function SuggestionsStep({
     onEscalate();
   }
 
-  async function handleRegenerate(sessionId: string): Promise<void> {
-    setRegenerating(sessionId);
-    try {
-      const res = await fetch(`/api/sessions/${sessionId}/regenerate-summary`, { method: 'POST' });
-      if (res.ok) {
-        const { summary } = await res.json() as { summary: string };
-        setSuggestions((prev) => prev.map((s) => s.sessionId === sessionId ? { ...s, summary } : s));
-      }
-    } catch { /* noop */ }
-    setRegenerating(null);
-  }
-
   function handleShowOn3D(sessionId: string): void {
     onClose();
     router.push(`/worker?preview=${sessionId}`);
@@ -290,10 +276,6 @@ function SuggestionsStep({
     const isExpanded  = expanded === s.sessionId;
     const isAnswering = answered === s.sessionId;
     const isResolved  = s.resolvedExpert || s.resolvedWorker;
-    // Treat NULL summary (AI never persisted) the same as __AI_FAILED__ —
-    // the session data is saved, only the summary is missing.
-    const isFailed    = s.summary === '__AI_FAILED__' || s.summary === null;
-    const isPending   = false; // Lists never show "generating" — only the post-call modal does
 
     return (
       <div
@@ -332,42 +314,13 @@ function SuggestionsStep({
               )}
             </div>
 
-            {/* Summary text, pending, or failed state */}
-            {isPending ? (
-              <span style={{ fontSize: '12px', color: '#94A3B8', fontStyle: 'italic' }}>
-                AI summary is being generated…
+            {/* AI summary — coming soon */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+              <Sparkles size={11} color="#94A3B8" />
+              <span style={{ fontSize: '11px', color: '#94A3B8', fontStyle: 'italic' }}>
+                AI summary — coming soon
               </span>
-            ) : isFailed ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '12px', color: '#94A3B8', fontStyle: 'italic' }}>AI summary not available.</span>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); void handleRegenerate(s.sessionId); }}
-                  disabled={regenerating === s.sessionId}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '3px',
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: '#1D4ED8', fontSize: '11px', fontWeight: 600, padding: 0,
-                  }}
-                >
-                  <RefreshCw size={11} style={{ animation: regenerating === s.sessionId ? 'spin 1s linear infinite' : 'none' }} />
-                  Regenerate
-                </button>
-              </div>
-            ) : (
-              <p
-                style={{
-                  margin: 0, fontSize: '13px', color: '#0F172A', fontWeight: 500,
-                  lineHeight: 1.4,
-                  display: '-webkit-box',
-                  WebkitLineClamp: isExpanded ? undefined : 2,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: isExpanded ? 'visible' : 'hidden',
-                }}
-              >
-                {s.summary}
-              </p>
-            )}
+            </div>
 
             <div style={{ display: 'flex', gap: '12px', marginTop: '6px', fontSize: '11px', color: '#94A3B8', flexWrap: 'wrap' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
@@ -527,8 +480,8 @@ function SuggestionsStep({
         )}
       </div>
 
-      {/* Escalation CTA */}
-      <div style={{ padding: '12px 20px 20px', borderTop: '1px solid #F1F5F9', background: '#FFFFFF' }}>
+      {/* Escalation CTA — flexShrink:0 keeps it always visible even when cards expand */}
+      <div style={{ padding: '12px 20px 20px', borderTop: '1px solid #F1F5F9', background: '#FFFFFF', flexShrink: 0 }}>
         <p style={{ margin: '0 0 10px', fontSize: '11px', color: '#94A3B8', textAlign: 'center' }}>
           {suggestions.length > 0 ? 'None of these solved your problem?' : 'Need immediate help?'}
         </p>

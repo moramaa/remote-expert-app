@@ -1,17 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   CheckCircle, XCircle, CheckCircle2, Star,
-  AlertTriangle, Loader2, History, RefreshCw,
+  Loader2, History, Sparkles,
 } from 'lucide-react';
-import type { SummaryStatusDTO } from '@/app/api/sessions/[id]/summary-status/route';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ExpertStage  = 'question' | 'saving' | 'confirmation';
 type WorkerStage  = 'rating' | 'thankyou';
-type AiStatus     = 'polling' | 'ready' | 'failed' | 'timeout';
 
 interface Props {
   open:           boolean;
@@ -22,11 +20,6 @@ interface Props {
   onViewHistory?: () => void;
 }
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const POLL_INTERVAL_MS  = 2_500;
-const POLL_MAX_ATTEMPTS = 10;   // 25 seconds total
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function SessionFeedbackModal({
@@ -34,89 +27,21 @@ export default function SessionFeedbackModal({
 }: Props) {
   // Expert flow
   const [expertStage,  setExpertStage]  = useState<ExpertStage>('question');
-  const [aiStatus,     setAiStatus]     = useState<AiStatus>('polling');
-  const [aiSummary,    setAiSummary]    = useState<string | null>(null);
-  const [regenerating, setRegenerating] = useState(false);
 
   // Worker flow
   const [workerStage,  setWorkerStage]  = useState<WorkerStage>('rating');
   const [hoverStar,    setHoverStar]    = useState(0);
   const [selectedStar, setSelectedStar] = useState(0);
 
-  const pollRef     = useRef<ReturnType<typeof setInterval> | null>(null);
-  const attemptsRef = useRef(0);
-
   // Reset every time the modal opens
   useEffect(() => {
     if (open) {
       setExpertStage('question');
-      setAiStatus('polling');
-      setAiSummary(null);
       setWorkerStage('rating');
       setHoverStar(0);
       setSelectedStar(0);
-      attemptsRef.current = 0;
     }
   }, [open]);
-
-  // Poll AI status once we reach the expert confirmation stage
-  useEffect(() => {
-    if (expertStage !== 'confirmation' || !sessionId) return;
-
-    function stopPolling() {
-      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-    }
-
-    function poll() {
-      if (!sessionId) return;
-      attemptsRef.current += 1;
-      fetch(`/api/sessions/${sessionId}/summary-status`)
-        .then((r) => r.json())
-        .then((data: SummaryStatusDTO) => {
-          if (data.status === 'ready') {
-            setAiStatus('ready'); setAiSummary(data.summary); stopPolling();
-          } else if (data.status === 'failed') {
-            setAiStatus('failed'); stopPolling();
-          } else if (attemptsRef.current >= POLL_MAX_ATTEMPTS) {
-            setAiStatus('timeout'); stopPolling();
-          }
-        })
-        .catch(() => { if (attemptsRef.current >= POLL_MAX_ATTEMPTS) { setAiStatus('timeout'); stopPolling(); } });
-    }
-
-    poll();
-    pollRef.current = setInterval(poll, POLL_INTERVAL_MS);
-    return stopPolling;
-  }, [expertStage, sessionId]);
-
-  async function handleRegenerate(): Promise<void> {
-    if (!sessionId) return;
-    setRegenerating(true);
-    setAiStatus('polling');
-    attemptsRef.current = 0;
-    try {
-      await fetch(`/api/sessions/${sessionId}/regenerate-summary`, { method: 'POST' });
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(() => {
-        attemptsRef.current += 1;
-        fetch(`/api/sessions/${sessionId}/summary-status`)
-          .then((r) => r.json())
-          .then((data: SummaryStatusDTO) => {
-            if (data.status === 'ready') {
-              setAiStatus('ready'); setAiSummary(data.summary);
-              if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-            } else if (data.status === 'failed') {
-              setAiStatus('failed');
-              if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-            } else if (attemptsRef.current >= POLL_MAX_ATTEMPTS) {
-              setAiStatus('timeout');
-              if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-            }
-          }).catch(() => {});
-      }, POLL_INTERVAL_MS);
-    } catch { /* noop */ }
-    setRegenerating(false);
-  }
 
   // Expert: answer resolution question → start save flow
   function handleExpertAnswer(resolved: boolean): void {
@@ -331,72 +256,25 @@ export default function SessionFeedbackModal({
               Call saved successfully
             </h2>
             <p style={{ fontSize: '13px', color: '#64748B', margin: '0 0 24px', lineHeight: 1.5 }}>
-              Markers, instructions, and voice transcript stored. The AI summary will appear in the worker&apos;s call history.
+              Markers, instructions, and voice transcript have been saved to the call history.
             </p>
 
-            {/* AI status card */}
+            {/* AI summary — coming soon */}
             <div
               style={{
-                border: `1px solid ${aiStatus === 'failed' ? '#FCA5A5' : aiStatus === 'ready' ? '#86EFAC' : '#E2E8F0'}`,
-                borderRadius: '10px', padding: '14px 16px', marginBottom: '24px',
-                background: aiStatus === 'failed' ? '#FEF2F2' : aiStatus === 'ready' ? '#F0FDF4' : '#F8FAFC',
-                textAlign: 'left',
+                display: 'flex', alignItems: 'center', gap: '10px',
+                border: '1px dashed #CBD5E1', borderRadius: '10px',
+                padding: '12px 16px', marginBottom: '24px',
+                background: '#F8FAFC', textAlign: 'left',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                <div style={{ flexShrink: 0, marginTop: '1px' }}>
-                  {aiStatus === 'polling' && <Loader2 size={16} color="#1D4ED8" style={{ animation: 'spin 1s linear infinite' }} />}
-                  {aiStatus === 'ready'   && <CheckCircle2 size={16} color="#16A34A" />}
-                  {aiStatus === 'failed'  && <AlertTriangle size={16} color="#DC2626" />}
-                  {aiStatus === 'timeout' && <AlertTriangle size={16} color="#D97706" />}
+              <Sparkles size={18} color="#94A3B8" style={{ flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748B' }}>
+                  AI Troubleshooting Guide — coming soon
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#0F172A', marginBottom: '4px' }}>
-                    {aiStatus === 'polling' && 'AI summary generating…'}
-                    {aiStatus === 'ready'   && 'AI summary ready'}
-                    {aiStatus === 'failed'  && 'AI summary failed'}
-                    {aiStatus === 'timeout' && 'AI summary still generating'}
-                  </div>
-                  {aiStatus === 'polling' && (
-                    <p style={{ margin: 0, fontSize: '11px', color: '#64748B', lineHeight: 1.4 }}>
-                      Claude is analysing the session — usually 5–10 seconds.
-                    </p>
-                  )}
-                  {aiStatus === 'ready' && aiSummary && (
-                    <p style={{
-                      margin: 0, fontSize: '11px', color: '#166534', lineHeight: 1.5,
-                      display: '-webkit-box', WebkitLineClamp: 3,
-                      WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                    }}>
-                      {aiSummary}
-                    </p>
-                  )}
-                  {aiStatus === 'failed' && (
-                    <>
-                      <p style={{ margin: '0 0 8px', fontSize: '11px', color: '#991B1B', lineHeight: 1.4 }}>
-                        The AI summary could not be generated. Session data is saved — only the summary is missing.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => void handleRegenerate()}
-                        disabled={regenerating}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: '4px',
-                          background: 'none', border: 'none', cursor: regenerating ? 'not-allowed' : 'pointer',
-                          color: '#DC2626', fontSize: '11px', fontWeight: 700, padding: 0,
-                          opacity: regenerating ? 0.6 : 1,
-                        }}
-                      >
-                        <RefreshCw size={11} style={{ animation: regenerating ? 'spin 1s linear infinite' : 'none' }} />
-                        Retry AI summary
-                      </button>
-                    </>
-                  )}
-                  {aiStatus === 'timeout' && (
-                    <p style={{ margin: 0, fontSize: '11px', color: '#92400E', lineHeight: 1.4 }}>
-                      Still generating — it will appear in the worker&apos;s call history shortly.
-                    </p>
-                  )}
+                <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px', lineHeight: 1.4 }}>
+                  AI-generated repair summaries will be available in a future update.
                 </div>
               </div>
             </div>
