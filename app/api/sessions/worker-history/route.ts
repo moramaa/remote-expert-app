@@ -50,6 +50,12 @@ export async function GET(req: NextRequest): Promise<Response> {
     return Response.json({ error: 'workerId is required' }, { status: 400 });
   }
 
+  // ── Demo mode: return static fixture data, no DB needed ──────────────────
+  const { isDemoId, DEMO_SESSIONS } = await import('@/lib/demo-data');
+  if (isDemoId(workerId)) {
+    return Response.json(DEMO_SESSIONS);
+  }
+
   const sessions = await prisma.session.findMany({
     where: {
       workerId,

@@ -48,6 +48,11 @@ export function storeRole(role: UserRole): void {
   localStorage.setItem(STORAGE_KEYS.role, role);
 }
 
+/** Overwrite the stored userId (used by demo mode to set a pre-defined ID). */
+export function storeUserId(id: string): void {
+  localStorage.setItem(STORAGE_KEYS.userId, id);
+}
+
 export function storeSessionId(sessionId: string): void {
   localStorage.setItem(STORAGE_KEYS.sessionId, sessionId);
 }

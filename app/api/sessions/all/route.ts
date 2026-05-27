@@ -48,6 +48,13 @@ export async function GET(req: NextRequest): Promise<Response> {
     200,
   );
 
+  // ── Demo mode: return static fixture data, no DB needed ──────────────────
+  const { DEMO_ADMIN_SESSIONS } = await import('@/lib/demo-data');
+  const userId = req.nextUrl.searchParams.get('userId') ?? '';
+  if (!userId || userId.startsWith('demo-')) {
+    return Response.json(DEMO_ADMIN_SESSIONS);
+  }
+
   const sessions = await prisma.session.findMany({
     where:   { endedAt: { not: null } },
     orderBy: { endedAt: 'desc' },

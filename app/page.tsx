@@ -2,8 +2,12 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Factory, HardHat, Shield } from 'lucide-react';
-import { getStoredRole, getStoredUserId, storeRole, type UserRole } from '@/lib/identity';
+import { Factory, HardHat, Shield, Zap } from 'lucide-react';
+import { getStoredRole, getStoredUserId, storeRole, storeUserId, clearIdentity, type UserRole } from '@/lib/identity';
+import {
+  DEMO_WORKER_ID, DEMO_EXPERT_ID, DEMO_ADMIN_ID,
+  DEMO_WORKER_NAME, DEMO_EXPERT_NAME,
+} from '@/lib/demo-data';
 
 export default function Home() {
   const router = useRouter();
@@ -20,6 +24,17 @@ export default function Home() {
   function select(role: UserRole): void {
     storeRole(role);
     router.push(`/onboarding/${role}`);
+  }
+
+  /** One-click demo entry — bypasses onboarding, lands directly on dashboard. */
+  function enterDemo(role: UserRole): void {
+    clearIdentity();
+    const id = role === 'worker' ? DEMO_WORKER_ID
+             : role === 'expert' ? DEMO_EXPERT_ID
+             : DEMO_ADMIN_ID;
+    storeUserId(id);
+    storeRole(role);
+    router.push(`/dashboard/${role}`);
   }
 
   return (
@@ -62,6 +77,103 @@ export default function Home() {
         </p>
       </div>
 
+      {/* ── Demo Mode Banner ──────────────────────────────────────────────── */}
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '360px',
+          background: 'linear-gradient(135deg, #EFF6FF 0%, #F0FDF4 100%)',
+          border: '1.5px solid #BFDBFE',
+          borderRadius: '14px',
+          padding: '20px 24px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <Zap size={16} color="#1D4ED8" />
+          <span style={{ fontSize: '13px', fontWeight: 700, color: '#1D4ED8' }}>
+            Try the demo instantly
+          </span>
+        </div>
+        <p style={{ fontSize: '12px', color: '#475569', margin: '0 0 16px' }}>
+          No registration needed — jump straight into a pre-loaded session.
+        </p>
+
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {/* Demo Worker */}
+          <button
+            type="button"
+            onClick={() => enterDemo('worker')}
+            style={{
+              flex: 1,
+              padding: '12px 10px',
+              background: '#1D4ED8',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+              lineHeight: 1.3,
+            }}
+          >
+            <HardHat size={18} style={{ display: 'block', margin: '0 auto 4px' }} />
+            {DEMO_WORKER_NAME}
+            <div style={{ fontSize: '10px', fontWeight: 400, opacity: 0.85, marginTop: '2px' }}>
+              Field Worker
+            </div>
+          </button>
+
+          {/* Demo Expert */}
+          <button
+            type="button"
+            onClick={() => enterDemo('expert')}
+            style={{
+              flex: 1,
+              padding: '12px 10px',
+              background: '#16A34A',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+              lineHeight: 1.3,
+            }}
+          >
+            <Factory size={18} style={{ display: 'block', margin: '0 auto 4px' }} />
+            {DEMO_EXPERT_NAME}
+            <div style={{ fontSize: '10px', fontWeight: 400, opacity: 0.85, marginTop: '2px' }}>
+              Remote Expert
+            </div>
+          </button>
+
+          {/* Demo Admin */}
+          <button
+            type="button"
+            onClick={() => enterDemo('administrator')}
+            style={{
+              flex: 1,
+              padding: '12px 10px',
+              background: '#7C3AED',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+              lineHeight: 1.3,
+            }}
+          >
+            <Shield size={18} style={{ display: 'block', margin: '0 auto 4px' }} />
+            Admin
+            <div style={{ fontSize: '10px', fontWeight: 400, opacity: 0.85, marginTop: '2px' }}>
+              Administrator
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Manual role-select (with registration) ─────────────────────── */}
       <div style={{ width: '100%', maxWidth: '320px', textAlign: 'center' }}>
         <p
           style={{
@@ -73,7 +185,7 @@ export default function Home() {
             fontFamily: 'var(--font-mono, monospace)',
           }}
         >
-          Who are you?
+          Or sign in with a new account
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
