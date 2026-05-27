@@ -28,6 +28,7 @@ export async function GET(
 
   return Response.json({
     sessionId:       session.id,
+    machineId:       session.machineId,
     machineName:     machine?.label ?? session.machineId,
     startedAt:       session.startedAt.toISOString(),
     endedAt:         session.endedAt.toISOString(),
