@@ -8,6 +8,9 @@
 # Always run from the folder where this script lives
 cd "$(dirname "$0")"
 
+# Remove quarantine flag from the project folder (harmless if already clear)
+xattr -cr . 2>/dev/null || true
+
 # ── Terminal colours ──────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'

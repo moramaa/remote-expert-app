@@ -21,9 +21,25 @@ The fastest way to start. No terminal commands needed after the first-time setup
 1. Unzip / clone the project folder
 2. Double-click **`launch-mac.command`**
 
-> **First run only:** macOS may show a security warning. Right-click the file → **Open** → **Open** to allow it. This only happens once.
-
 The script will install dependencies, set up the database, start the server, and open **http://localhost:3000** in your browser automatically.
+
+---
+
+#### ⚠️ macOS says the file is "damaged" or "cannot be opened"?
+
+This is a macOS Gatekeeper security block — it happens when files are downloaded from the internet. Run the one-time fix:
+
+**Step 1** — Open Terminal (press `⌘ Space`, type `Terminal`, press Enter)
+
+**Step 2** — Type `bash ` (with a space after), then drag **`setup-mac.sh`** from Finder into the Terminal window, then press **Enter**
+
+```
+bash /path/to/remote-expert-app/setup-mac.sh
+```
+
+This removes the quarantine flag and immediately launches FieldSync. After this runs once, you can double-click `launch-mac.command` normally forever.
+
+---
 
 ### Windows
 
