@@ -2,11 +2,11 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertTriangle, PhoneCall, History } from 'lucide-react';
+import { AlertTriangle, PhoneCall, History, LogOut } from 'lucide-react';
 import SosFlow from '@/components/worker/SosFlow';
 import { useSocket } from '@/hooks/useSocket';
 import { useProfile } from '@/hooks/useProfile';
-import { getStoredUserId, storeSessionId } from '@/lib/identity';
+import { getStoredUserId, storeSessionId, clearIdentity } from '@/lib/identity';
 
 interface WorkerProfile {
   name: string;
@@ -65,16 +65,42 @@ function WorkerDashboardInner() {
   return (
     <div style={{ minHeight: '100vh', background: '#F8FAFC', color: '#0F172A', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{ background: '#FFFFFF', borderBottom: '1px solid #E2E8F0', padding: '16px 20px' }}>
-        <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#1D4ED8', margin: 0 }}>
-          {workerProfile?.name ?? 'Worker'}
-        </h1>
-        <p style={{ fontSize: '12px', color: '#64748B', margin: '2px 0 0' }}>
-          {workerProfile?.factory ?? ''}
-        </p>
-        <p style={{ fontSize: '10px', color: '#94A3B8', fontFamily: 'monospace', margin: '2px 0 0', letterSpacing: '0.08em' }}>
-          ID: {userId.slice(0, 8)}… · Worker View
-        </p>
+      <div style={{ background: '#FFFFFF', borderBottom: '1px solid #E2E8F0', padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#1D4ED8', margin: 0 }}>
+            {workerProfile?.name ?? 'Worker'}
+          </h1>
+          <p style={{ fontSize: '12px', color: '#64748B', margin: '2px 0 0' }}>
+            {workerProfile?.factory ?? ''}
+          </p>
+          <p style={{ fontSize: '10px', color: '#94A3B8', fontFamily: 'monospace', margin: '2px 0 0', letterSpacing: '0.08em' }}>
+            ID: {userId.slice(0, 8)}… · Worker View
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => { clearIdentity(); router.push('/'); }}
+          title="Switch role / log out"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '5px',
+            padding: '7px 12px', borderRadius: '8px',
+            border: '1px solid #E2E8F0', background: '#FFFFFF',
+            color: '#64748B', fontSize: '12px', fontWeight: 500,
+            cursor: 'pointer', transition: 'border-color 0.15s, color 0.15s',
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = '#DC2626';
+            (e.currentTarget as HTMLButtonElement).style.color = '#DC2626';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = '#E2E8F0';
+            (e.currentTarget as HTMLButtonElement).style.color = '#64748B';
+          }}
+        >
+          <LogOut size={13} />
+          Switch Role
+        </button>
       </div>
 
       {/* Body — vertically centered hero */}

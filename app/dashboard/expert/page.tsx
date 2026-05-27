@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { BookOpen, History, Factory } from 'lucide-react';
+import { BookOpen, History, Factory, LogOut } from 'lucide-react';
 import AvailabilityToggle from '@/components/dashboard/AvailabilityToggle';
 import DashboardCard from '@/components/dashboard/DashboardCard';
 import LiveQueuePanel from '@/components/dashboard/LiveQueuePanel';
 import { useSocket } from '@/hooks/useSocket';
 import { useProfile } from '@/hooks/useProfile';
-import { getStoredUserId, storeSessionId } from '@/lib/identity';
+import { getStoredUserId, storeSessionId, clearIdentity } from '@/lib/identity';
 import type { TicketSummary } from '@/types/socket';
 
 interface ExpertProfile {
@@ -168,11 +168,36 @@ export default function ExpertDashboardPage() {
             </p>
           </div>
 
-          <AvailabilityToggle
-            online={online}
-            onChange={handleToggle}
-            disabled={!isConnected || !expertProfile}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AvailabilityToggle
+              online={online}
+              onChange={handleToggle}
+              disabled={!isConnected || !expertProfile}
+            />
+            <button
+              type="button"
+              onClick={() => { clearIdentity(); router.push('/'); }}
+              title="Switch role / log out"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                padding: '7px 12px', borderRadius: '8px',
+                border: '1px solid #E2E8F0', background: '#FFFFFF',
+                color: '#64748B', fontSize: '12px', fontWeight: 500,
+                cursor: 'pointer', transition: 'border-color 0.15s, color 0.15s',
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = '#DC2626';
+                (e.currentTarget as HTMLButtonElement).style.color = '#DC2626';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = '#E2E8F0';
+                (e.currentTarget as HTMLButtonElement).style.color = '#64748B';
+              }}
+            >
+              <LogOut size={13} />
+              Switch Role
+            </button>
+          </div>
         </div>
 
         {/* Live Queue */}

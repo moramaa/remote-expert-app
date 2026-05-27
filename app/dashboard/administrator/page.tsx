@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import {
   Shield, CheckCircle2, XCircle, Clock, AlertTriangle,
   Loader2, ChevronRight, MapPin, MessageSquare, Tag,
-  Mic, Map, Trash2, Eye, BarChart3, User, FileText, RefreshCw,
+  Mic, Map, Trash2, Eye, BarChart3, User, FileText, RefreshCw, LogOut,
 } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
+import { clearIdentity } from '@/lib/identity';
 import type { AdminSessionDTO } from '@/app/api/sessions/all/route';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -205,6 +206,30 @@ export default function AdministratorDashboardPage() {
         <span style={{ fontSize: '11px', color: '#94A3B8' }}>
           {sessions.length} session{sessions.length !== 1 ? 's' : ''}
         </span>
+        <button
+          type="button"
+          onClick={() => { clearIdentity(); router.push('/'); }}
+          title="Switch role / log out"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '5px',
+            padding: '7px 12px', borderRadius: '8px',
+            border: '1px solid #E2E8F0', background: '#FFFFFF',
+            color: '#64748B', fontSize: '12px', fontWeight: 500,
+            cursor: 'pointer', transition: 'border-color 0.15s, color 0.15s',
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = '#DC2626';
+            (e.currentTarget as HTMLButtonElement).style.color = '#DC2626';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = '#E2E8F0';
+            (e.currentTarget as HTMLButtonElement).style.color = '#64748B';
+          }}
+        >
+          <LogOut size={13} />
+          Switch Role
+        </button>
       </div>
 
       {/* Content */}
