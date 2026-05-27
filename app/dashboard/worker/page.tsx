@@ -7,6 +7,7 @@ import SosFlow from '@/components/worker/SosFlow';
 import { useSocket } from '@/hooks/useSocket';
 import { useProfile } from '@/hooks/useProfile';
 import { getStoredUserId, storeSessionId, clearIdentity } from '@/lib/identity';
+import { isDemoId } from '@/lib/demo-data';
 
 interface WorkerProfile {
   name: string;
@@ -23,12 +24,16 @@ function WorkerDashboardInner() {
   const [workerProfile, setWorkerProfile] = useState<WorkerProfile | null>(null);
   const [showSosFlow,   setShowSosFlow]   = useState(false);
 
+  // In demo mode treat the user as connected — no real socket needed
+  const isDemoUser = isDemoId(getStoredUserId());
+  const isEffectivelyConnected = isConnected || isDemoUser;
+
   // ?sos=MACHINE_ID → auto-open SOS flow (from "Start Live SOS Call" in preview mode)
   useEffect(() => {
-    if (searchParams.get('sos') && isConnected && workerProfile) {
+    if (searchParams.get('sos') && isEffectivelyConnected && workerProfile) {
       setShowSosFlow(true);
     }
-  }, [searchParams, isConnected, workerProfile]);
+  }, [searchParams, isEffectivelyConnected, workerProfile]);
 
   // Load profile
   useEffect(() => {
@@ -105,8 +110,8 @@ function WorkerDashboardInner() {
 
       {/* Body — vertically centered hero */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 20px', gap: '16px' }}>
-        {/* Offline warning */}
-        {!isConnected && (
+        {/* Offline warning — hidden for demo users */}
+        {!isEffectivelyConnected && (
           <div
             style={{
               width: '100%', maxWidth: '420px', padding: '10px 14px',
@@ -140,15 +145,15 @@ function WorkerDashboardInner() {
           </div>
           <button
             onClick={() => setShowSosFlow(true)}
-            disabled={!isConnected}
+            disabled={!isEffectivelyConnected}
             style={{
               width: '100%', padding: '16px',
-              background: isConnected ? '#1D4ED8' : '#94A3B8', color: '#FFFFFF',
+              background: isEffectivelyConnected ? '#1D4ED8' : '#94A3B8', color: '#FFFFFF',
               border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: 700,
-              cursor: isConnected ? 'pointer' : 'not-allowed', letterSpacing: '0.02em', transition: 'background 0.15s',
+              cursor: isEffectivelyConnected ? 'pointer' : 'not-allowed', letterSpacing: '0.02em', transition: 'background 0.15s',
             }}
-            onMouseEnter={(e) => { if (isConnected) (e.currentTarget as HTMLButtonElement).style.background = '#1E40AF'; }}
-            onMouseLeave={(e) => { if (isConnected) (e.currentTarget as HTMLButtonElement).style.background = '#1D4ED8'; }}
+            onMouseEnter={(e) => { if (isEffectivelyConnected) (e.currentTarget as HTMLButtonElement).style.background = '#1E40AF'; }}
+            onMouseLeave={(e) => { if (isEffectivelyConnected) (e.currentTarget as HTMLButtonElement).style.background = '#1D4ED8'; }}
           >
             Open SOS Call
           </button>
@@ -181,12 +186,12 @@ function WorkerDashboardInner() {
         </button>
       </div>
 
-      {/* SOS bottom-sheet flow */}
-      {showSosFlow && workerProfile && socket && (
+      {/* SOS bottom-sheet flow — socket may be null in demo mode */}
+      {showSosFlow && workerProfile && (socket || isDemoUser) && (
         <SosFlow
           profile={{ name: workerProfile.name, factory: workerProfile.factory }}
           socket={socket}
-          isConnected={isConnected}
+          isConnected={isEffectivelyConnected}
           onSessionJoined={(sessionId) => {
             storeSessionId(sessionId);
             router.push('/worker');
