@@ -140,13 +140,13 @@ function WorkerPageInner() {
   const handleJumpToMarker = useCallback(async (m: Marker) => {
     const sdk = mpSdkRef.current;
     if (!sdk) return;
-    const sdkTagId = tagIdMapRef.current.get(m.id);
-    if (!sdkTagId) return;
+    // Use Sweep.moveTo — the Bundle SDK does not load ILayersModule so
+    // sdk.Tag.open() throws at runtime. moveTo() works in all SDK modes.
+    const sweepId = m.sweepId;
+    if (!sweepId) return;
     try {
-      // Tag.open navigates the camera to the tag and highlights it
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (sdk.Tag as any).open(sdkTagId);
-    } catch { /* noop */ }
+      await sdk.Sweep.moveTo(sweepId, { transition: 'transition.fly' });
+    } catch { /* sweep may not exist in current floor — noop */ }
   }, []);
 
   // ── Stage 1: rebind socket to live session room after navigating in ──────
