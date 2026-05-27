@@ -4,6 +4,47 @@
 
 ---
 
+## 🚀 Running the Demo — Single Click
+
+The fastest way to start. No terminal commands needed after the first-time setup.
+
+### Prerequisites — install Node.js once
+
+| Platform | Download |
+|---|---|
+| Mac & Windows | [nodejs.org](https://nodejs.org) — download and install the **LTS** version |
+
+> If you don't have Node.js the launcher will detect it, open the download page automatically, and remind you to re-run after installing.
+
+### Mac
+
+1. Unzip / clone the project folder
+2. Double-click **`launch-mac.command`**
+
+> **First run only:** macOS may show a security warning. Right-click the file → **Open** → **Open** to allow it. This only happens once.
+
+The script will install dependencies, set up the database, start the server, and open **http://localhost:3000** in your browser automatically.
+
+### Windows
+
+1. Unzip / clone the project folder
+2. Double-click **`launch-windows.bat`**
+
+A second window labelled **"FieldSync Server"** will open and run the server. Keep it open while using the demo.
+
+### Two-browser demo tip
+
+Both launchers print this reminder, but here it is up front:
+
+| Window | URL | Role |
+|---|---|---|
+| Normal window | `http://localhost:3000` | Worker |
+| **Incognito / InPrivate** window | `http://localhost:3000` | Expert |
+
+Using incognito for the second window gives it its own separate identity so the two roles don't collide.
+
+---
+
 ## What is FieldSync?
 
 FieldSync is a real-time remote assistance platform designed for industrial environments. When a factory worker encounters a problem with a machine, they launch an SOS call and are instantly connected with a certified expert who guides them through the fix — **inside a live, shared 3D model of the exact machine**.
