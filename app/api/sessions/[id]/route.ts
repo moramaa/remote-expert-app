@@ -1,5 +1,50 @@
 import { type NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { MACHINE_MAP } from '@/lib/machines';
+import type { Marker, Instruction, PositionPing } from '@/types/socket';
+
+/**
+ * GET /api/sessions/:id
+ *
+ * Returns a rich session DTO used by the summary-status polling and retry
+ * flows. Includes markers, instructions, pttCount, positionLog, and summary.
+ */
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const { id } = await params;
+
+  const session = await prisma.session.findUnique({ where: { id } });
+  if (!session || !session.endedAt) {
+    return Response.json({ error: 'Session not found' }, { status: 404 });
+  }
+
+  const machine = MACHINE_MAP.get(session.machineId);
+  const markerLog: Marker[]       = session.markerLog      ? (JSON.parse(session.markerLog)      as Marker[])       : [];
+  const instrLog:  Instruction[]  = session.instructionLog ? (JSON.parse(session.instructionLog) as Instruction[])  : [];
+  const posLog:    PositionPing[] = session.positionLog    ? (JSON.parse(session.positionLog)    as PositionPing[]) : [];
+  const pttCount   = session.transcriptLog ? (JSON.parse(session.transcriptLog) as unknown[]).length : 0;
+
+  return Response.json({
+    sessionId:       session.id,
+    machineName:     machine?.label ?? session.machineId,
+    startedAt:       session.startedAt.toISOString(),
+    endedAt:         session.endedAt.toISOString(),
+    durationSeconds: Math.round((session.endedAt.getTime() - session.startedAt.getTime()) / 1000),
+    resolvedExpert:  session.resolvedExpert,
+    resolvedWorker:  session.resolvedWorker,
+    safetyTriggered: session.safetyTriggered,
+    locationDept:    session.locationDept,
+    locationLine:    session.locationLine,
+    locationStation: session.locationStation,
+    summary:         session.summary,
+    markers:         markerLog,
+    instructions:    instrLog,
+    pttCount,
+    positionLog:     posLog,
+  });
+}
 
 /**
  * DELETE /api/sessions/:id

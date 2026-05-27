@@ -39,17 +39,17 @@ export default function EmergencyFreezeButton({ onFreeze, acknowledged }: Props)
         style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: '8px',
+          gap: '6px',
           background: '#FEE2E2',
-          border: '2px solid #DC2626',
-          borderRadius: '8px',
-          padding: '12px',
+          border: '1px solid #DC2626',
+          borderRadius: '7px',
+          padding: '8px 10px',
         }}
       >
-        <div style={{ fontSize: '12px', fontWeight: 600, color: '#DC2626' }}>
+        <div style={{ fontSize: '11px', fontWeight: 600, color: '#DC2626' }}>
           ⚠️ This will lock the worker&apos;s screen immediately.
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '6px' }}>
           <button
             type="button"
             onClick={() => { setConfirming(false); onFreeze(); }}
@@ -59,7 +59,7 @@ export default function EmergencyFreezeButton({ onFreeze, acknowledged }: Props)
               color: '#fff',
               border: 'none',
               borderRadius: '6px',
-              padding: '8px',
+              padding: '7px',
               fontSize: '12px',
               fontWeight: 700,
               cursor: 'pointer',
@@ -75,7 +75,7 @@ export default function EmergencyFreezeButton({ onFreeze, acknowledged }: Props)
               color: '#64748B',
               border: '1px solid #E2E8F0',
               borderRadius: '6px',
-              padding: '8px 12px',
+              padding: '7px 10px',
               fontSize: '12px',
               cursor: 'pointer',
             }}
@@ -95,22 +95,22 @@ export default function EmergencyFreezeButton({ onFreeze, acknowledged }: Props)
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '8px',
+        gap: '6px',
         width: '100%',
         background: '#DC2626',
         color: '#FFFFFF',
         border: 'none',
-        borderRadius: '8px',
-        padding: '12px 16px',
-        fontSize: '14px',
+        borderRadius: '7px',
+        padding: '9px 14px',
+        fontSize: '13px',
         fontWeight: 700,
         cursor: 'pointer',
-        letterSpacing: '0.03em',
-        boxShadow: '0 2px 8px rgba(220,38,38,0.35)',
+        letterSpacing: '0.02em',
+        boxShadow: '0 2px 6px rgba(220,38,38,0.30)',
       }}
     >
-      <AlertTriangle size={18} />
-      🚨 Emergency Freeze
+      <AlertTriangle size={15} />
+      Emergency Freeze
     </button>
   );
 }

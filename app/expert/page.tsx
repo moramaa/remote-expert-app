@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Factory, Trash2, Bell } from 'lucide-react';
 import MatterportViewer from '@/components/MatterportViewer';
-import ModeSelector, { type ExpertMode } from '@/components/expert/ModeSelector';
+import { type ExpertMode } from '@/components/expert/ModeSelector';
+import FloatingModeBar from '@/components/expert/FloatingModeBar';
+import FloatingMirrorFab from '@/components/expert/FloatingMirrorFab';
 import MarkersList from '@/components/expert/MarkersList';
 import InstructionInput from '@/components/expert/InstructionInput';
-import MirrorViewToggle from '@/components/expert/MirrorViewToggle';
 import LaserOverlay from '@/components/expert/LaserOverlay';
 import HighlightZoneDrawer from '@/components/expert/HighlightZoneDrawer';
 import MarkerLabelDialog from '@/components/expert/MarkerLabelDialog';
@@ -532,6 +533,32 @@ export default function ExpertPage() {
             </div>
           )}
 
+          {/* Floating mode selector — top-right */}
+          <FloatingModeBar mode={mode} onChange={handleModeChange} />
+
+          {/* Floating mirror FAB — top-left */}
+          <FloatingMirrorFab
+            driver={driver}
+            controlRequested={controlRequested}
+            onExpertDrive={handleExpertDrive}
+            onWorkerDrive={handleWorkerDrive}
+            onStopMirror={handleStopMirror}
+            onGrant={handleGrantControl}
+            onDeny={handleDenyControl}
+          />
+
+          {/* Floating PTT FAB — bottom-right */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '24px',
+              right: '20px',
+              zIndex: 20,
+            }}
+          >
+            <PttButton speakerId={userId} onChunk={handlePttChunk} floating />
+          </div>
+
           {/* Worker PTT subtitle */}
           {workerPttSubtitle && (
             <div
@@ -561,74 +588,91 @@ export default function ExpertPage() {
         {/* Control panel */}
         <aside
           style={{
-            width: '360px',
+            width: '300px',
+            flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
-            gap: '10px',
-            overflowY: 'auto',
             borderLeft: '1px solid #E2E8F0',
             background: '#F8FAFC',
-            padding: '12px',
+            overflow: 'hidden',
           }}
         >
-          <ModeSelector mode={mode} onChange={handleModeChange} />
-          <PlaybookSelector onSendStep={sendInstruction} />
-          {/* PTT Button */}
+          {/* Scrollable section — everything except the danger bar */}
           <div
             style={{
-              padding: '10px 12px',
-              border: '1px solid #E2E8F0',
-              borderRadius: '8px',
-              background: '#FFFFFF',
+              flex: 1,
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              padding: '10px',
             }}
           >
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
-              Push-to-Talk
-            </div>
-            <PttButton speakerId={userId} onChunk={handlePttChunk} />
-          </div>
-          <InstructionInput recent={sentInstructions} onSend={(text) => sendInstruction(text)} />
-          <MarkersList markers={markers} onRemove={removeMarker} onClearAll={clearMarkers} />
-          <MirrorViewToggle
-            driver={driver}
-            controlRequested={controlRequested}
-            onExpertDrive={handleExpertDrive}
-            onWorkerDrive={handleWorkerDrive}
-            onStopMirror={handleStopMirror}
-            onGrant={handleGrantControl}
-            onDeny={handleDenyControl}
-          />
-          <EmergencyFreezeButton onFreeze={handleEmergencyFreeze} acknowledged={emergencyAcknowledged} />
+            {/* Playbooks */}
+            <PlaybookSelector onSendStep={sendInstruction} />
 
-          {/* Clear controls */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-            {[
-              { label: 'Markers', onClick: clearMarkers },
-              { label: 'Zones', onClick: clearZones },
-              { label: 'All', onClick: clearAll, danger: true },
-            ].map(({ label, onClick, danger }) => (
+            {/* Send Instruction */}
+            <InstructionInput recent={sentInstructions} onSend={(text) => sendInstruction(text)} />
+
+            {/* Markers */}
+            <MarkersList markers={markers} onRemove={removeMarker} onClearAll={clearMarkers} />
+
+          </div>
+
+          {/* Sticky danger bar — always visible at the bottom */}
+          <div
+            style={{
+              flexShrink: 0,
+              borderTop: '1px solid #E2E8F0',
+              background: '#FFFFFF',
+              padding: '8px 10px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+            }}
+          >
+            {/* Emergency Freeze */}
+            <EmergencyFreezeButton onFreeze={handleEmergencyFreeze} acknowledged={emergencyAcknowledged} />
+
+            {/* Clear actions row */}
+            <div style={{ display: 'flex', gap: '6px' }}>
               <button
-                key={label}
                 type="button"
-                onClick={onClick}
+                onClick={clearMarkers}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '4px',
-                  border: `1px solid ${danger ? '#DC262660' : '#E2E8F0'}`,
-                  background: 'transparent',
-                  color: danger ? '#DC2626' : '#64748B',
-                  borderRadius: '6px',
-                  padding: '8px',
-                  fontSize: '12px',
-                  cursor: 'pointer',
+                  flex: 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
+                  border: '1px solid #E2E8F0', background: 'transparent', color: '#64748B',
+                  borderRadius: '6px', padding: '6px', fontSize: '11px', cursor: 'pointer',
                 }}
               >
-                <Trash2 size={11} />
-                {label}
+                <Trash2 size={10} /> Markers
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={clearZones}
+                style={{
+                  flex: 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
+                  border: '1px solid #E2E8F0', background: 'transparent', color: '#64748B',
+                  borderRadius: '6px', padding: '6px', fontSize: '11px', cursor: 'pointer',
+                }}
+              >
+                <Trash2 size={10} /> Zones
+              </button>
+              <button
+                type="button"
+                onClick={clearAll}
+                style={{
+                  flex: 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
+                  border: '1px solid #DC262640', background: 'transparent', color: '#DC2626',
+                  borderRadius: '6px', padding: '6px', fontSize: '11px', cursor: 'pointer',
+                }}
+              >
+                <Trash2 size={10} /> All
+              </button>
+            </div>
           </div>
         </aside>
       </div>
