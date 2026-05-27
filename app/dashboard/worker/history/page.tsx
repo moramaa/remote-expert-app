@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock, AlertTriangle,
-  Eye, RefreshCw, Loader2, History, ChevronRight,
-  MapPin, MessageSquare, Tag, Mic, Map, FileText,
+  Eye, Loader2, History, ChevronRight,
+  MapPin, MessageSquare, Tag, Mic, Map, Sparkles,
 } from 'lucide-react';
 import { getStoredUserId } from '@/lib/identity';
 import type { WorkerSessionDTO } from '@/app/api/sessions/worker-history/route';
@@ -37,111 +37,6 @@ function fmtRelative(ts: number, startMs: number): string {
   return m > 0 ? `+${m}m ${s}s` : `+${s}s`;
 }
 
-// ── AI Summary Renderer ───────────────────────────────────────────────────────
-
-/**
- * Parses and renders an AI-generated troubleshooting summary.
- * Detects the structured format produced by lib/ai.ts:
- *   - Lines starting with "⚠️" or "❗" → styled warning blocks
- *   - "Problem:" line → bold label + text
- *   - "Steps:" header → section label
- *   - "N." lines → numbered step chips with blue left-border
- *   - Everything else → plain text paragraph
- */
-function AiSummaryBlock({ text }: { text: string }) {
-  const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-      {lines.map((line, i) => {
-        // Safety / unresolved warning block
-        if (line.startsWith('⚠️') || line.startsWith('❗')) {
-          const isAmber = line.startsWith('⚠️');
-          return (
-            <div
-              key={i}
-              style={{
-                display: 'flex', gap: '8px', alignItems: 'flex-start',
-                padding: '8px 10px', borderRadius: '8px',
-                background: isAmber ? '#FEF3C7' : '#FEE2E2',
-                border: `1px solid ${isAmber ? '#FCD34D' : '#FCA5A5'}`,
-              }}
-            >
-              <AlertTriangle size={13} color={isAmber ? '#D97706' : '#DC2626'} style={{ flexShrink: 0, marginTop: '1px' }} />
-              <span style={{ fontSize: '12px', color: isAmber ? '#78350F' : '#991B1B', lineHeight: 1.5 }}>
-                {line.replace(/^[⚠️❗]\s*/, '')}
-              </span>
-            </div>
-          );
-        }
-
-        // "Steps:" section header
-        if (/^steps:?$/i.test(line)) {
-          return (
-            <div
-              key={i}
-              style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748B', marginTop: '4px' }}
-            >
-              Steps
-            </div>
-          );
-        }
-
-        // "Problem:" line
-        if (/^problem:/i.test(line)) {
-          return (
-            <div key={i} style={{ fontSize: '12px', color: '#0F172A', lineHeight: 1.5 }}>
-              <span style={{ fontWeight: 700, color: '#1D4ED8' }}>Problem: </span>
-              {line.replace(/^problem:\s*/i, '')}
-            </div>
-          );
-        }
-
-        // Numbered step: "1. ..." or "10. ..."
-        const stepMatch = line.match(/^(\d+)\.\s+(.+)$/);
-        if (stepMatch) {
-          return (
-            <div
-              key={i}
-              style={{
-                display: 'flex', gap: '10px', alignItems: 'flex-start',
-                padding: '7px 10px',
-                background: '#F8FAFC',
-                borderLeft: '3px solid #1D4ED8',
-                borderRadius: '0 6px 6px 0',
-              }}
-            >
-              <span
-                style={{
-                  flexShrink: 0,
-                  width: '20px', height: '20px',
-                  borderRadius: '50%',
-                  background: '#1D4ED8',
-                  color: '#FFFFFF',
-                  fontSize: '10px', fontWeight: 700,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                {stepMatch[1]}
-              </span>
-              <span style={{ fontSize: '12px', color: '#0F172A', lineHeight: 1.5 }}>
-                {stepMatch[2]}
-              </span>
-            </div>
-          );
-        }
-
-        // Plain text fallback
-        return (
-          <p key={i} style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.5 }}>
-            {line}
-          </p>
-        );
-      })}
-    </div>
-  );
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function WorkerHistoryPage() {
@@ -151,7 +46,6 @@ export default function WorkerHistoryPage() {
   const [sessions,    setSessions]    = useState<WorkerSessionDTO[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [expanded,    setExpanded]    = useState<string | null>(null);
-  const [regenerating, setRegenerating] = useState<string | null>(null);
   const [movementOpen, setMovementOpen] = useState<string | null>(null);
 
   useEffect(() => {
@@ -161,18 +55,6 @@ export default function WorkerHistoryPage() {
       .then((data: WorkerSessionDTO[]) => { setSessions(data); setLoading(false); })
       .catch(() => setLoading(false));
   }, [workerId]);
-
-  async function handleRegenerate(sessionId: string): Promise<void> {
-    setRegenerating(sessionId);
-    try {
-      const res = await fetch(`/api/sessions/${sessionId}/regenerate-summary`, { method: 'POST' });
-      if (res.ok) {
-        const { summary } = await res.json() as { summary: string };
-        setSessions((prev) => prev.map((s) => s.sessionId === sessionId ? { ...s, summary } : s));
-      }
-    } catch { /* noop */ }
-    setRegenerating(null);
-  }
 
   // Group sessions by date label
   const grouped = sessions.reduce<Record<string, WorkerSessionDTO[]>>((acc, s) => {
@@ -263,10 +145,6 @@ export default function WorkerHistoryPage() {
                 {group.map((s) => {
                   const isExpanded  = expanded === s.sessionId;
                   const isResolved  = s.resolvedExpert || s.resolvedWorker;
-                  // Treat NULL summary the same as __AI_FAILED__ in lists —
-                  // session is saved, only summary is missing
-                  const isFailed    = s.summary === '__AI_FAILED__' || s.summary === null;
-                  const isPending   = false;
 
                   return (
                     <div
@@ -500,63 +378,25 @@ export default function WorkerHistoryPage() {
                             </p>
                           )}
 
-                          {/* AI Summary */}
+                          {/* AI Troubleshooting Guide — coming soon */}
                           <div style={{ marginBottom: '12px', borderTop: '1px solid #E2E8F0', paddingTop: '12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <FileText size={11} color="#64748B" />
-                                <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748B' }}>
+                            <div
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                padding: '10px 14px', borderRadius: '8px',
+                                background: '#F8FAFC', border: '1px dashed #CBD5E1',
+                              }}
+                            >
+                              <Sparkles size={14} color="#94A3B8" />
+                              <div>
+                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748B' }}>
                                   AI Troubleshooting Guide
-                                </span>
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>
+                                  Coming soon — AI-generated repair guidance will appear here.
+                                </div>
                               </div>
-                              {isFailed && (
-                                <button
-                                  type="button"
-                                  onClick={() => void handleRegenerate(s.sessionId)}
-                                  disabled={regenerating === s.sessionId}
-                                  style={{
-                                    display: 'flex', alignItems: 'center', gap: '3px',
-                                    background: 'none', border: 'none', cursor: regenerating === s.sessionId ? 'default' : 'pointer',
-                                    color: '#1D4ED8', fontSize: '11px', fontWeight: 600, padding: 0,
-                                    opacity: regenerating === s.sessionId ? 0.5 : 1,
-                                  }}
-                                >
-                                  <RefreshCw size={11} style={{ animation: regenerating === s.sessionId ? 'spin 1s linear infinite' : 'none' }} />
-                                  {regenerating === s.sessionId ? 'Generating…' : 'Retry'}
-                                </button>
-                              )}
                             </div>
-                            {regenerating === s.sessionId ? (
-                              /* Loading skeleton */
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {[80, 60, 90, 70].map((w, i) => (
-                                  <div
-                                    key={i}
-                                    style={{
-                                      height: '12px', borderRadius: '6px',
-                                      background: 'linear-gradient(90deg, #E2E8F0 25%, #F1F5F9 50%, #E2E8F0 75%)',
-                                      backgroundSize: '200% 100%',
-                                      animation: 'shimmer 1.5s infinite',
-                                      width: `${w}%`,
-                                    }}
-                                  />
-                                ))}
-                                <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
-                              </div>
-                            ) : isFailed ? (
-                              <div
-                                style={{
-                                  padding: '10px 12px', borderRadius: '8px',
-                                  background: '#F8FAFC', border: '1px dashed #CBD5E1',
-                                }}
-                              >
-                                <p style={{ margin: 0, fontSize: '12px', color: '#94A3B8', fontStyle: 'italic' }}>
-                                  No AI guide available for this session. Click Retry to generate one.
-                                </p>
-                              </div>
-                            ) : (
-                              <AiSummaryBlock text={s.summary ?? ''} />
-                            )}
                           </div>
 
                           {/* Show on 3D */}

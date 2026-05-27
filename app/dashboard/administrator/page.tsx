@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import {
   Shield, CheckCircle2, XCircle, Clock, AlertTriangle,
   Loader2, ChevronRight, MapPin, MessageSquare, Tag,
-  Mic, Map, Trash2, Eye, BarChart3, User, FileText, RefreshCw,
+  Mic, Map, Trash2, Eye, BarChart3, User, Sparkles, LogOut,
 } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
+import { clearIdentity } from '@/lib/identity';
 import type { AdminSessionDTO } from '@/app/api/sessions/all/route';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -36,87 +37,6 @@ function fmtRelative(ts: number, startMs: number): string {
   return m > 0 ? `+${m}m ${s}s` : `+${s}s`;
 }
 
-// ── AI Summary Renderer ───────────────────────────────────────────────────────
-
-function AiSummaryBlock({ text }: { text: string }) {
-  const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-      {lines.map((line, i) => {
-        if (line.startsWith('⚠️') || line.startsWith('❗')) {
-          const isAmber = line.startsWith('⚠️');
-          return (
-            <div
-              key={i}
-              style={{
-                display: 'flex', gap: '8px', alignItems: 'flex-start',
-                padding: '8px 10px', borderRadius: '8px',
-                background: isAmber ? '#FEF3C7' : '#FEE2E2',
-                border: `1px solid ${isAmber ? '#FCD34D' : '#FCA5A5'}`,
-              }}
-            >
-              <AlertTriangle size={13} color={isAmber ? '#D97706' : '#DC2626'} style={{ flexShrink: 0, marginTop: '1px' }} />
-              <span style={{ fontSize: '12px', color: isAmber ? '#78350F' : '#991B1B', lineHeight: 1.5 }}>
-                {line.replace(/^[⚠️❗]\s*/, '')}
-              </span>
-            </div>
-          );
-        }
-        if (/^steps:?$/i.test(line)) {
-          return (
-            <div key={i} style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748B', marginTop: '4px' }}>
-              Steps
-            </div>
-          );
-        }
-        if (/^problem:/i.test(line)) {
-          return (
-            <div key={i} style={{ fontSize: '12px', color: '#0F172A', lineHeight: 1.5 }}>
-              <span style={{ fontWeight: 700, color: '#1D4ED8' }}>Problem: </span>
-              {line.replace(/^problem:\s*/i, '')}
-            </div>
-          );
-        }
-        const stepMatch = line.match(/^(\d+)\.\s+(.+)$/);
-        if (stepMatch) {
-          return (
-            <div
-              key={i}
-              style={{
-                display: 'flex', gap: '10px', alignItems: 'flex-start',
-                padding: '7px 10px',
-                background: '#F8FAFC',
-                borderLeft: '3px solid #1D4ED8',
-                borderRadius: '0 6px 6px 0',
-              }}
-            >
-              <span
-                style={{
-                  flexShrink: 0, width: '20px', height: '20px', borderRadius: '50%',
-                  background: '#1D4ED8', color: '#FFFFFF',
-                  fontSize: '10px', fontWeight: 700,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                {stepMatch[1]}
-              </span>
-              <span style={{ fontSize: '12px', color: '#0F172A', lineHeight: 1.5 }}>
-                {stepMatch[2]}
-              </span>
-            </div>
-          );
-        }
-        return (
-          <p key={i} style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.5 }}>
-            {line}
-          </p>
-        );
-      })}
-    </div>
-  );
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AdministratorDashboardPage() {
@@ -129,7 +49,6 @@ export default function AdministratorDashboardPage() {
   const [movementOpen, setMovementOpen] = useState<string | null>(null);
   const [deleting,     setDeleting]    = useState<string | null>(null);
   const [confirmId,    setConfirmId]   = useState<string | null>(null);
-  const [regenerating, setRegenerating] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile.status !== 'ready') return;
@@ -138,18 +57,6 @@ export default function AdministratorDashboardPage() {
       .then((data: AdminSessionDTO[]) => { setSessions(data); setLoading(false); })
       .catch(() => setLoading(false));
   }, [profile]);
-
-  const handleRegenerate = useCallback(async (sessionId: string) => {
-    setRegenerating(sessionId);
-    try {
-      const res = await fetch(`/api/sessions/${sessionId}/summary/retry`, { method: 'POST' });
-      if (res.ok) {
-        const { summary } = await res.json() as { summary: string };
-        setSessions((prev) => prev.map((s) => s.sessionId === sessionId ? { ...s, summary } : s));
-      }
-    } catch { /* noop */ }
-    setRegenerating(null);
-  }, []);
 
   const handleDelete = useCallback(async (sessionId: string) => {
     setDeleting(sessionId);
@@ -205,6 +112,30 @@ export default function AdministratorDashboardPage() {
         <span style={{ fontSize: '11px', color: '#94A3B8' }}>
           {sessions.length} session{sessions.length !== 1 ? 's' : ''}
         </span>
+        <button
+          type="button"
+          onClick={() => { clearIdentity(); router.push('/'); }}
+          title="Switch role / log out"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '5px',
+            padding: '7px 12px', borderRadius: '8px',
+            border: '1px solid #E2E8F0', background: '#FFFFFF',
+            color: '#64748B', fontSize: '12px', fontWeight: 500,
+            cursor: 'pointer', transition: 'border-color 0.15s, color 0.15s',
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = '#DC2626';
+            (e.currentTarget as HTMLButtonElement).style.color = '#DC2626';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = '#E2E8F0';
+            (e.currentTarget as HTMLButtonElement).style.color = '#64748B';
+          }}
+        >
+          <LogOut size={13} />
+          Switch Role
+        </button>
       </div>
 
       {/* Content */}
@@ -234,7 +165,6 @@ export default function AdministratorDashboardPage() {
               const isExpanded     = expanded === s.sessionId;
               const isMovementOpen = movementOpen === s.sessionId;
               const isResolved     = s.resolvedExpert || s.resolvedWorker;
-              const isFailed       = s.summary === '__AI_FAILED__' || s.summary === null;
               const sessionStartMs = new Date(s.startedAt).getTime();
 
               return (
@@ -425,62 +355,25 @@ export default function AdministratorDashboardPage() {
                         </p>
                       )}
 
-                      {/* AI Summary */}
+                      {/* AI Troubleshooting Guide — coming soon */}
                       <div style={{ marginBottom: '14px', borderTop: '1px solid #E2E8F0', paddingTop: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <FileText size={11} color="#64748B" />
-                            <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748B' }}>
+                        <div
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            padding: '10px 14px', borderRadius: '8px',
+                            background: '#F8FAFC', border: '1px dashed #CBD5E1',
+                          }}
+                        >
+                          <Sparkles size={14} color="#94A3B8" />
+                          <div>
+                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748B' }}>
                               AI Troubleshooting Guide
-                            </span>
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>
+                              Coming soon — AI-generated repair guidance will appear here.
+                            </div>
                           </div>
-                          {isFailed && (
-                            <button
-                              type="button"
-                              onClick={() => void handleRegenerate(s.sessionId)}
-                              disabled={regenerating === s.sessionId}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: '3px',
-                                background: 'none', border: 'none', cursor: regenerating === s.sessionId ? 'default' : 'pointer',
-                                color: '#1D4ED8', fontSize: '11px', fontWeight: 600, padding: 0,
-                                opacity: regenerating === s.sessionId ? 0.5 : 1,
-                              }}
-                            >
-                              <RefreshCw size={11} style={{ animation: regenerating === s.sessionId ? 'spin 1s linear infinite' : 'none' }} />
-                              {regenerating === s.sessionId ? 'Generating…' : 'Retry'}
-                            </button>
-                          )}
                         </div>
-                        {regenerating === s.sessionId ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {[80, 60, 90, 70].map((w, i) => (
-                              <div
-                                key={i}
-                                style={{
-                                  height: '12px', borderRadius: '6px',
-                                  background: 'linear-gradient(90deg, #E2E8F0 25%, #F1F5F9 50%, #E2E8F0 75%)',
-                                  backgroundSize: '200% 100%',
-                                  animation: 'shimmer 1.5s infinite',
-                                  width: `${w}%`,
-                                }}
-                              />
-                            ))}
-                            <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
-                          </div>
-                        ) : isFailed ? (
-                          <div
-                            style={{
-                              padding: '10px 12px', borderRadius: '8px',
-                              background: '#F8FAFC', border: '1px dashed #CBD5E1',
-                            }}
-                          >
-                            <p style={{ margin: 0, fontSize: '12px', color: '#94A3B8', fontStyle: 'italic' }}>
-                              No AI guide available for this session. Click Retry to generate one.
-                            </p>
-                          </div>
-                        ) : (
-                          <AiSummaryBlock text={s.summary ?? ''} />
-                        )}
                       </div>
 
                       {/* Action row */}

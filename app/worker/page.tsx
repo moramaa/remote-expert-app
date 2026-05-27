@@ -433,9 +433,6 @@ function WorkerPageInner() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {!isPreview && (
-              <PttButton speakerId={userId} onChunk={handlePttChunk} label="PTT" />
-            )}
-            {!isPreview && (
               <ConnectionStatus
                 socketConnected={isConnected}
                 viewerReady={viewerReady}
@@ -464,12 +461,19 @@ function WorkerPageInner() {
             {!isPreview && <LaserPointerDot position={laser} />}
           </MatterportViewer>
 
-          {/* Expert PTT subtitle */}
+          {/* Floating PTT FAB — bottom-right of viewer */}
+          {!isPreview && (
+            <div style={{ position: 'absolute', bottom: '20px', right: '16px', zIndex: 20 }}>
+              <PttButton speakerId={userId} onChunk={handlePttChunk} floating />
+            </div>
+          )}
+
+          {/* Expert PTT subtitle — sits above the floating PTT FAB */}
           {!isPreview && expertPttSubtitle && (
             <div
               style={{
                 position: 'absolute',
-                bottom: '12px',
+                bottom: '104px',
                 left: '50%',
                 transform: 'translateX(-50%)',
                 background: 'rgba(29,78,216,0.9)',
