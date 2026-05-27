@@ -6,7 +6,7 @@
     "dev": "concurrently -n next,socket -c blue,magenta \"npm run dev:next\" \"npm run server\"",
     "dev:next": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "prisma migrate deploy && tsx prisma/seed.ts ; tsx server.ts",
     "lint": "eslint",
     "server": "tsx server/index.ts",
     "dev:all": "npm run dev",
@@ -32,6 +32,7 @@
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "three": "^0.176.0",
+    "tsx": "^4.22.3",
     "uuid": "^14.0.0",
     "zod": "^4.4.3"
   },
@@ -45,7 +46,6 @@
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
-    "tsx": "^4.22.3",
     "typescript": "^5"
   }
 }
