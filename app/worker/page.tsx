@@ -140,12 +140,33 @@ function WorkerPageInner() {
   const handleJumpToMarker = useCallback(async (m: Marker) => {
     const sdk = mpSdkRef.current;
     if (!sdk) return;
-    // Use Sweep.moveTo — the Bundle SDK does not load ILayersModule so
-    // sdk.Tag.open() throws at runtime. moveTo() works in all SDK modes.
-    const sweepId = m.sweepId;
-    if (!sweepId) return;
+
+    // Prefer the sweep recorded at placement time.
+    // If absent (mock/legacy sessions), fall back to nearest sweep by 3D distance.
+    let targetSweepId = m.sweepId;
+
+    if (!targetSweepId) {
+      // Find the sweep whose puck position is closest to the marker's 3D coords
+      let bestId: string | null = null;
+      let bestDist = Infinity;
+      try {
+        // sdk.Sweep.data is an IObservableMap — iterate its current snapshot
+        // The Bundle SDK type omits .data, so cast the namespace
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ((sdk.Sweep as any).data as any).forEach((sweep: { id: string; position: { x: number; y: number; z: number } }) => {
+          const dx = sweep.position.x - m.x;
+          const dy = sweep.position.y - m.y;
+          const dz = sweep.position.z - m.z;
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (dist < bestDist) { bestDist = dist; bestId = sweep.id; }
+        });
+      } catch { /* noop */ }
+      if (!bestId) return;
+      targetSweepId = bestId;
+    }
+
     try {
-      await sdk.Sweep.moveTo(sweepId, { transition: 'transition.fly' });
+      await sdk.Sweep.moveTo(targetSweepId, { transition: 'transition.fly' });
     } catch { /* sweep may not exist in current floor — noop */ }
   }, []);
 
