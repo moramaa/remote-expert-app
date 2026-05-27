@@ -118,13 +118,11 @@ Then fill in:
 
 ```env
 NEXT_PUBLIC_MATTERPORT_SDK_KEY=your_matterport_sdk_key_here
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ```
 
 | Variable | Required | Description |
 |---|---|---|
 | `NEXT_PUBLIC_MATTERPORT_SDK_KEY` | For 3D viewer | Obtain at [matterport.com/developers](https://matterport.com/developers) |
-| `ANTHROPIC_API_KEY` | For AI features | AI summaries are shown as "Coming Soon" without it |
 
 ---
 
