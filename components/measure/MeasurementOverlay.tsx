@@ -55,6 +55,15 @@ export interface ProjectedMeasurement {
   meters: number;
 }
 
+/** A gaze-based measurement suggestion, projected to screen space (MEAS-4). */
+export interface ProjectedSuggestion {
+  id:      string;
+  a:       ScreenPoint;
+  b:       ScreenPoint;
+  meters:  number;
+  focused?: boolean;
+}
+
 interface Props {
   width:  number;
   height: number;
@@ -64,10 +73,16 @@ interface Props {
   projected: ProjectedMeasurement[];
   /** In-progress line: first point + live cursor point (both projected). */
   preview?: { a: ScreenPoint; b: ScreenPoint; meters: number } | null;
+  /** Gaze suggestions — non-committal dashed previews (MEAS-4). */
+  suggestions?: ProjectedSuggestion[];
+  /** The auto-captured gaze anchor point (MEAS-4). */
+  anchor?: ScreenPoint;
   selectedId?: string | null;
   hoveredId?:  string | null;
   onSelect?: (id: string) => void;
 }
+
+const SUGGESTION_COLOR = '#22D3EE';
 
 function midpoint(a: { x: number; y: number }, b: { x: number; y: number }) {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -75,7 +90,7 @@ function midpoint(a: { x: number; y: number }, b: { x: number; y: number }) {
 
 export default function MeasurementOverlay({
   width, height, unit, theme = DEFAULT_THEME,
-  projected, preview, selectedId, hoveredId, onSelect,
+  projected, preview, suggestions, anchor, selectedId, hoveredId, onSelect,
 }: Props) {
   return (
     <svg
@@ -112,6 +127,34 @@ export default function MeasurementOverlay({
           </g>
         );
       })}
+
+      {/* ── MEAS-4: gaze suggestions (non-committal dashed previews) ───── */}
+      {suggestions?.map((s) => {
+        if (!s.a || !s.b) return null;
+        const mid = midpoint(s.a, s.b);
+        return (
+          <g key={s.id} style={{ opacity: s.focused ? 1 : 0.66, transition: 'opacity 0.2s' }}>
+            <line
+              x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y}
+              stroke={SUGGESTION_COLOR} strokeWidth={s.focused ? 4 : 3}
+              strokeOpacity={0.85} strokeLinecap="round" strokeDasharray="6 7"
+            />
+            <circle cx={s.b.x} cy={s.b.y} r={5} fill={SUGGESTION_COLOR} stroke="#FFFFFF" strokeWidth={1.5} />
+            <DistanceLabel x={mid.x} y={mid.y} text={format(s.meters, unit)} theme={{ ...theme, labelBg: SUGGESTION_COLOR, labelColor: '#0F172A' }} />
+          </g>
+        );
+      })}
+
+      {/* MEAS-4: pulsing gaze anchor */}
+      {anchor && (
+        <g>
+          <circle cx={anchor.x} cy={anchor.y} r={9} fill="none" stroke={SUGGESTION_COLOR} strokeWidth={2}>
+            <animate attributeName="r" values="7;13;7" dur="1.6s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="1;0.3;1" dur="1.6s" repeatCount="indefinite" />
+          </circle>
+          <circle cx={anchor.x} cy={anchor.y} r={4} fill={SUGGESTION_COLOR} />
+        </g>
+      )}
 
       {/* ── In-progress preview line ──────────────────────────────────── */}
       {preview && preview.a && preview.b && (
