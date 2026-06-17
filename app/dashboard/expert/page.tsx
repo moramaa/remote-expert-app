@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { BookOpen, History, Factory, LogOut } from 'lucide-react';
+import { BookOpen, History, Factory, LogOut, Ruler } from 'lucide-react';
 import AvailabilityToggle from '@/components/dashboard/AvailabilityToggle';
 import DashboardCard from '@/components/dashboard/DashboardCard';
 import LiveQueuePanel from '@/components/dashboard/LiveQueuePanel';
@@ -226,6 +226,12 @@ export default function ExpertDashboardPage() {
             title="My Classrooms"
             description="Manage scheduled training classes."
             comingSoon
+          />
+          <DashboardCard
+            icon={<Ruler size={32} />}
+            title="Measurement"
+            description="Measure real distances on the 3D model with metric/imperial units."
+            onClick={() => router.push('/expert/measure')}
           />
           <DashboardCard
             icon={<Factory size={32} />}
