@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Ruler, Trash2, X, MousePointerClick, Eye, Sparkles,
   MoveHorizontal, MoveVertical, Slash, RotateCcw, Spline, Circle as CircleIcon,
-  Palette, Square,
+  Palette, Square, Box as BoxIcon, ScanSearch, Lock,
 } from 'lucide-react';
 import MatterportViewer from '@/components/MatterportViewer';
 import MeasurementOverlay, {
@@ -28,12 +28,16 @@ import {
   classifySurface, buildSuggestions,
   type GazeSuggestion, type SurfaceClass,
 } from '@/lib/gaze-suggestions';
+import {
+  computeBox, boxCorners, boxDims, isInlier, BOX_EDGES, type BoxParams,
+} from '@/lib/object-scan';
 
 function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 const THEME_KEY = 'fieldsync:measureTheme';
+const BOX_COLOR = '#10B981';   // emerald — object bounding boxes
 
 function loadTheme(): MeasurementTheme {
   if (typeof window === 'undefined') return DEFAULT_THEME;
@@ -54,6 +58,21 @@ function primaryLabel(m: Measurement, unit: MeasurementUnit): string {
     return `⌀ ${format(diameter, unit)}`;
   }
   return format(pathLength(m.points, m.closed), unit);
+}
+
+/** Build projected box wireframe edges + W/D/H labels from box params. */
+function projectBox(
+  box: BoxParams, unit: MeasurementUnit, project: (p: Vec3) => ScreenPoint,
+): { edges: Array<[ScreenPoint, ScreenPoint]>; extraLabels: Array<{ at: ScreenPoint; text: string }>; center: ScreenPoint } {
+  const c = boxCorners(box).map(project);
+  const edges = BOX_EDGES.map(([i, j]) => [c[i], c[j]] as [ScreenPoint, ScreenPoint]);
+  const mid = (a: ScreenPoint, b: ScreenPoint): ScreenPoint => (a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : null);
+  const extraLabels = [
+    { at: mid(c[0], c[1]), text: `W ${format(box.width, unit)}` },
+    { at: mid(c[1], c[2]), text: `D ${format(box.depth, unit)}` },
+    ...(box.height > 0 ? [{ at: mid(c[1], c[5]), text: `H ${format(box.height, unit)}` }] : []),
+  ].filter((l) => l.at);
+  return { edges, extraLabels, center: project(box.center) };
 }
 
 export default function MeasurePage() {
@@ -80,6 +99,13 @@ export default function MeasurePage() {
   const [gazeClass, setGazeClass]     = useState<SurfaceClass | null>(null);
   const [suggestions, setSuggestions] = useState<GazeSuggestion[]>([]);
   const [focusedKind, setFocusedKind] = useState<string | null>(null);
+
+  // ── MEAS-4 Phase 2: automatic object bounding-box scan ───────────────────
+  const [scanBox, setScanBox] = useState<BoxParams | null>(null);
+  const scanSeedRef   = useRef<{ pos: Vec3; normal: Vec3 } | null>(null);
+  const scanPointsRef = useRef<Vec3[]>([]);
+  const floorYRef     = useRef<number | null>(null);
+  const scanBoxRef    = useRef<BoxParams | null>(null);
 
   const wrapperRef          = useRef<HTMLDivElement>(null);
   const mpSdkRef            = useRef<MatterportSdk | null>(null);
@@ -206,12 +232,41 @@ export default function MeasurePage() {
     }
   }, []);
 
-  // Tap vs double-tap (double = finish path)
+  // ── MEAS-4 Phase 2: object scan controls ─────────────────────────────────
+  const resetScan = useCallback(() => {
+    scanSeedRef.current = null; scanPointsRef.current = []; floorYRef.current = null;
+    scanBoxRef.current = null; setScanBox(null);
+  }, []);
+
+  const reseedScanAtHover = useCallback(() => {
+    const h = hoverPoint();
+    if (!h) return;
+    scanSeedRef.current = { pos: h.pos, normal: h.normal };
+    scanPointsRef.current = [h.pos];
+    floorYRef.current = null;
+  }, []);
+
+  const lockBox = useCallback(() => {
+    const box = scanBoxRef.current;
+    if (!box || box.width < 0.02 || box.depth < 0.02) return;
+    const m: Measurement = { id: uid(), kind: 'box', points: [], closed: true, box };
+    setMeasurements((prev) => [...prev, m]);
+    setSelectedId(m.id);
+    resetScan();
+  }, [resetScan]);
+
+  // Tap vs double-tap (double = finish / lock)
   const handleTap = useCallback((x: number, y: number) => {
     if (autoSuggestRef.current && toolRef.current === 'path') return; // gaze drives
     const now = Date.now();
     const lt = lastTapRef.current;
     const isDouble = !!lt && now - lt.t < 300 && Math.hypot(x - lt.x, y - lt.y) < 14;
+    if (toolRef.current === 'box') {
+      if (isDouble) { lastTapRef.current = null; lockBox(); return; }
+      reseedScanAtHover();               // single click re-seeds the scan
+      lastTapRef.current = { t: now, x, y };
+      return;
+    }
     if (toolRef.current === 'path' && isDouble) {
       lastTapRef.current = null;
       finalizePath();
@@ -219,7 +274,7 @@ export default function MeasurePage() {
     }
     placeVertex();
     lastTapRef.current = { t: now, x, y };
-  }, [finalizePath, placeVertex]);
+  }, [finalizePath, placeVertex, lockBox, reseedScanAtHover]);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     downRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
@@ -235,13 +290,13 @@ export default function MeasurePage() {
   // Keyboard: Space add · Enter finish · Escape cancel
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.code === 'Space') { e.preventDefault(); if (!(autoSuggestRef.current && toolRef.current === 'path')) placeVertex(); }
-      else if (e.code === 'Enter') { e.preventDefault(); if (toolRef.current === 'path') finalizePath(); }
-      else if (e.code === 'Escape') { setDraftPoints([]); setSelectedId(null); }
+      if (e.code === 'Space') { e.preventDefault(); if (toolRef.current === 'path' && !autoSuggestRef.current) placeVertex(); }
+      else if (e.code === 'Enter') { e.preventDefault(); if (toolRef.current === 'path') finalizePath(); else if (toolRef.current === 'box') lockBox(); }
+      else if (e.code === 'Escape') { setDraftPoints([]); setSelectedId(null); if (toolRef.current === 'box') resetScan(); }
     };
     window.addEventListener('keydown', handler, { capture: true });
     return () => window.removeEventListener('keydown', handler, { capture: true });
-  }, [placeVertex, finalizePath]);
+  }, [placeVertex, finalizePath, lockBox, resetScan]);
 
   const removeMeasurement = useCallback((id: string) => {
     setMeasurements((prev) => prev.filter((m) => m.id !== id));
@@ -252,7 +307,7 @@ export default function MeasurePage() {
   const switchTool = useCallback((t: MeasurementKind) => {
     setTool(t);
     setDraftPoints([]);
-    if (t === 'circle') setAutoSuggest(false);
+    if (t !== 'path') setAutoSuggest(false);
   }, []);
 
   // ── MEAS-4 gaze engine ───────────────────────────────────────────────────
@@ -295,9 +350,42 @@ export default function MeasurePage() {
     setAutoSuggest((on) => { const next = !on; if (next) setDraftPoints([]); return next; });
   }, []);
 
+  // ── MEAS-4 Phase 2: object scan loop (callbacks defined above) ───────────
+  useEffect(() => {
+    if (tool !== 'box') { resetScan(); return; }
+    const id = setInterval(() => {
+      const h = hoverPoint();
+      if (!h) return;
+      let seed = scanSeedRef.current;
+      if (!seed) {
+        seed = { pos: h.pos, normal: h.normal };
+        scanSeedRef.current = seed;
+        scanPointsRef.current = [h.pos];
+      } else if (isInlier(h.pos, h.normal, seed.pos, seed.normal)) {
+        const pts = scanPointsRef.current;
+        const lp = pts[pts.length - 1];
+        if (!lp || Math.hypot(h.pos.x - lp.x, h.pos.y - lp.y, h.pos.z - lp.z) > 0.03) {
+          pts.push(h.pos);
+          if (pts.length > 600) pts.shift();
+        }
+      } else if (h.normal.y > 0.7 && h.pos.y < seed.pos.y - 0.1) {
+        // a lower horizontal surface → floor candidate (for height)
+        floorYRef.current = floorYRef.current == null ? h.pos.y : Math.min(floorYRef.current, h.pos.y);
+      }
+      const box = computeBox(scanPointsRef.current, seed.normal, floorYRef.current);
+      scanBoxRef.current = box;
+      setScanBox(box);
+    }, 80);
+    return () => clearInterval(id);
+  }, [tool, resetScan]);
+
   // ── Projection (per frame) ───────────────────────────────────────────────
   const shapes: ProjectedShape[] = useMemo(
     () => measurements.map((m) => {
+      if (m.kind === 'box' && m.box) {
+        const { edges, extraLabels, center } = projectBox(m.box, unit, project);
+        return { id: m.id, kind: 'box' as const, line: [], markers: [], closed: true, primary: '', labelAt: center, edges, extraLabels, color: BOX_COLOR };
+      }
       if (m.kind === 'circle') {
         const { circumference } = circleMetrics(m.points[0], m.points[1]);
         const radius = Math.hypot(m.points[1].x - m.points[0].x, m.points[1].y - m.points[0].y, m.points[1].z - m.points[0].z);
@@ -320,6 +408,12 @@ export default function MeasurePage() {
   );
 
   const draft: DraftShape | null = useMemo(() => {
+    // Object-scan live box (tool === 'box')
+    if (tool === 'box') {
+      if (!scanBox || (scanBox.width < 0.01 && scanBox.depth < 0.01)) return null;
+      const { edges, extraLabels } = projectBox(scanBox, unit, project);
+      return { kind: 'box', line: [], markers: [], cursor: { x: 0, y: 0 }, closed: true, primary: '', labelAt: null, edges, extraLabels, color: BOX_COLOR };
+    }
     if (draftPoints.length === 0) return null;
     const h = hoverPoint();
     const cursor = h ? project(h.pos) : null;
@@ -340,7 +434,7 @@ export default function MeasurePage() {
       labelAt: cursor,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftPoints, tool, closedShape, unit, project, size, frame]);
+  }, [draftPoints, tool, closedShape, unit, project, size, frame, scanBox]);
 
   const projectedSuggestions: ProjectedSuggestion[] = useMemo(
     () => suggestions.map((s) => ({ id: s.id, a: project(s.a), b: project(s.b), meters: s.meters, focused: focusedKind === s.kind })),
@@ -353,13 +447,17 @@ export default function MeasurePage() {
     [anchor, project, size, frame],
   );
 
-  const hint = autoSuggest && tool === 'path'
-    ? (anchor ? 'Look at a target — pick a suggestion' : 'Look at a surface to set the start point')
-    : tool === 'circle'
-      ? (draftPoints.length === 0 ? 'Click the circle center' : 'Click to set the radius')
-      : draftPoints.length === 0
-        ? 'Click to start · single-click adds points · double-click to finish'
-        : 'Single-click to add · double-click (or Enter) to finish';
+  const hint = tool === 'box'
+    ? (!scanSeedRef.current
+        ? 'Look at the object’s top surface to start scanning'
+        : 'Sweep your gaze across the object · double-click (or Lock) to keep it')
+    : autoSuggest && tool === 'path'
+      ? (anchor ? 'Look at a target — pick a suggestion' : 'Look at a surface to set the start point')
+      : tool === 'circle'
+        ? (draftPoints.length === 0 ? 'Click the circle center' : 'Click to set the radius')
+        : draftPoints.length === 0
+          ? 'Click to start · single-click adds points · double-click to finish'
+          : 'Single-click to add · double-click (or Enter) to finish';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0F172A' }}>
@@ -378,6 +476,7 @@ export default function MeasurePage() {
           <div style={{ display: 'flex', border: '1px solid #CBD5E1', borderRadius: '8px', overflow: 'hidden' }}>
             <SegBtn active={tool === 'path'} onClick={() => switchTool('path')}><Spline size={14} /> Line / Shape</SegBtn>
             <SegBtn active={tool === 'circle'} onClick={() => switchTool('circle')}><CircleIcon size={14} /> Circle</SegBtn>
+            <SegBtn active={tool === 'box'} onClick={() => switchTool('box')}><BoxIcon size={14} /> Auto-box</SegBtn>
           </div>
 
           {/* Close-shape toggle (path only) */}
@@ -453,7 +552,7 @@ export default function MeasurePage() {
 
         {viewerReady && (
           <div style={{ position: 'absolute', bottom: '16px', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(15,23,42,0.92)', color: '#FFFFFF', fontSize: '12px', fontWeight: 600, padding: '8px 16px', borderRadius: '999px', zIndex: 12, whiteSpace: 'nowrap', pointerEvents: 'none' }}>
-            {autoSuggest && tool === 'path' ? <Sparkles size={14} color="#22D3EE" /> : <MousePointerClick size={14} color="#F59E0B" />}
+            {tool === 'box' ? <ScanSearch size={14} color={BOX_COLOR} /> : autoSuggest && tool === 'path' ? <Sparkles size={14} color="#22D3EE" /> : <MousePointerClick size={14} color="#F59E0B" />}
             {hint}
           </div>
         )}
@@ -483,6 +582,46 @@ export default function MeasurePage() {
           </div>
         )}
 
+        {/* MEAS-4 Phase 2: object-scan panel */}
+        {tool === 'box' && viewerReady && (
+          <div style={{ position: 'absolute', bottom: '72px', left: '16px', width: '270px', background: 'rgba(255,255,255,0.97)', borderRadius: '12px', boxShadow: '0 8px 30px rgba(0,0,0,0.25)', zIndex: 12, padding: '14px', border: `1px solid ${BOX_COLOR}55` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
+              <ScanSearch size={13} /> Auto object scan
+            </div>
+            {!scanBox ? (
+              <p style={{ margin: 0, fontSize: '12px', color: '#64748B', lineHeight: 1.5 }}>
+                Look at the object’s top surface, then sweep your gaze across it — the box snaps to its size automatically.
+              </p>
+            ) : (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '4px' }}>
+                  {([['W (x)', scanBox.width], ['D (z)', scanBox.depth], ['H (y)', scanBox.height]] as const).map(([lbl, val]) => (
+                    <div key={lbl} style={{ background: '#ECFDF5', border: `1px solid ${BOX_COLOR}44`, borderRadius: '8px', padding: '6px 4px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '10px', color: '#047857', fontWeight: 700 }}>{lbl}</div>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#0F172A', fontFamily: 'ui-monospace, monospace' }}>{val > 0 ? format(val, unit) : '—'}</div>
+                    </div>
+                  ))}
+                </div>
+                {scanBox.height === 0 && (
+                  <p style={{ margin: '4px 0 8px', fontSize: '11px', color: '#94A3B8', lineHeight: 1.4 }}>
+                    Glance at the floor beside the object to capture its height.
+                  </p>
+                )}
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                  <button type="button" onClick={lockBox} disabled={scanBox.width < 0.02 || scanBox.depth < 0.02}
+                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '9px', background: BOX_COLOR, color: '#FFFFFF', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: scanBox.width < 0.02 ? 0.5 : 1 }}>
+                    <Lock size={13} /> Keep
+                  </button>
+                  <button type="button" onClick={resetScan}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '9px 12px', background: '#FFFFFF', color: '#64748B', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                    <RotateCcw size={13} /> Rescan
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Measurements list */}
         {measurements.length > 0 && (
           <div style={{ position: 'absolute', top: '16px', right: '16px', width: '260px', maxHeight: 'calc(100% - 32px)', overflowY: 'auto', background: 'rgba(255,255,255,0.97)', borderRadius: '12px', boxShadow: '0 8px 30px rgba(0,0,0,0.25)', zIndex: 12, padding: '12px' }}>
@@ -493,7 +632,7 @@ export default function MeasurePage() {
                 <div key={m.id} onMouseEnter={() => setHoveredId(m.id)} onMouseLeave={() => setHoveredId(null)} onClick={() => setSelectedId(m.id)}
                   style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', background: active ? '#ECFEFF' : 'transparent', border: `1px solid ${active ? '#22D3EE' : 'transparent'}`, marginBottom: '4px' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', minWidth: 0 }}>
-                    <span style={{ flexShrink: 0, width: '20px', height: '20px', borderRadius: '50%', background: m.kind === 'circle' ? '#3B82F6' : m.closed ? '#A855F7' : '#F59E0B', color: '#FFFFFF', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{idx + 1}</span>
+                    <span style={{ flexShrink: 0, width: '20px', height: '20px', borderRadius: '50%', background: m.kind === 'box' ? BOX_COLOR : m.kind === 'circle' ? '#3B82F6' : m.closed ? '#A855F7' : '#F59E0B', color: '#FFFFFF', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{idx + 1}</span>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748B' }}>{shapeName(m)}</div>
                       {detailLines(m, unit).map((ln, i) => (
@@ -532,6 +671,7 @@ function SegBtn({ active, onClick, children }: { active: boolean; onClick: () =>
 }
 
 function shapeName(m: Measurement): string {
+  if (m.kind === 'box') return 'Object box';
   if (m.kind === 'circle') return 'Circle';
   if (m.closed) {
     const n = m.points.length;
@@ -541,6 +681,12 @@ function shapeName(m: Measurement): string {
 }
 
 function detailLines(m: Measurement, unit: MeasurementUnit): string[] {
+  if (m.kind === 'box' && m.box) {
+    const { width, depth, height, volume } = boxDims(m.box);
+    const lines = [`${format(width, unit)} × ${format(depth, unit)} × ${format(height, unit)}`];
+    lines.push(height > 0 ? `Vol ${volume.toFixed(2)} m³` : 'glance at floor for height');
+    return lines;
+  }
   if (m.kind === 'circle') {
     const { radius, diameter, circumference, area } = circleMetrics(m.points[0], m.points[1]);
     return [

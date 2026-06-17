@@ -7,18 +7,21 @@
  */
 
 import { distance, type Vec3 } from '@/lib/measurement-units';
+import type { BoxParams } from '@/lib/object-scan';
 
-export type MeasurementKind = 'path' | 'circle';
+export type MeasurementKind = 'path' | 'circle' | 'box';
 
 export interface Measurement {
   id:      string;
   kind:    MeasurementKind;
-  /** Path: the ordered vertices. Circle: [center, radiusPoint]. */
+  /** Path: the ordered vertices. Circle: [center, radiusPoint]. Box: []. */
   points:  Vec3[];
   /** Path only: whether last→first is connected (triangle/square/…). */
   closed:  boolean;
   /** Circle only: plane normal the ring lies in. */
   normal?: Vec3;
+  /** Box only: the fitted bounding-box parameters (object scan). */
+  box?:    BoxParams;
 }
 
 // ── Vector ops ────────────────────────────────────────────────────────────────

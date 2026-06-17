@@ -40,6 +40,9 @@ export const COLOR_PRESETS = ['#F59E0B', '#EF4444', '#22C55E', '#3B82F6', '#A855
 
 export type ScreenPoint = { x: number; y: number } | null;
 
+/** A label pinned to a screen position (used for box dimension labels). */
+export interface PinnedLabel { at: ScreenPoint; text: string; }
+
 export interface ProjectedShape {
   id:           string;
   kind:         MeasurementKind;
@@ -50,6 +53,12 @@ export interface ProjectedShape {
   closed:       boolean;
   primary:      string;        // formatted label text
   labelAt:      ScreenPoint;
+  /** Box only: independent wireframe edges (not a single polyline). */
+  edges?:       Array<[ScreenPoint, ScreenPoint]>;
+  /** Box only: per-axis dimension labels. */
+  extraLabels?: PinnedLabel[];
+  /** Override the line colour (e.g. emerald for object boxes). */
+  color?:       string;
 }
 
 export interface DraftShape {
@@ -61,6 +70,9 @@ export interface DraftShape {
   closed:  boolean;
   primary: string;
   labelAt: ScreenPoint;
+  edges?:       Array<[ScreenPoint, ScreenPoint]>;
+  extraLabels?: PinnedLabel[];
+  color?:       string;
 }
 
 export interface ProjectedSuggestion {
@@ -118,12 +130,16 @@ export default function MeasurementOverlay({
       {/* ── Completed shapes ───────────────────────────────────────────── */}
       {shapes.map((m) => {
         const active = m.id === selectedId || m.id === hoveredId;
-        const stroke = active ? theme.highlightColor : theme.lineColor;
+        const base   = m.color ?? theme.lineColor;
+        const stroke = active ? theme.highlightColor : base;
         const sw     = active ? theme.highlightWidth : theme.lineWidth;
-        const segs   = segments(m.line, m.kind === 'circle' ? false : m.closed);
+        const segs   = m.edges ?? segments(m.line, m.kind === 'circle' ? false : m.closed);
         return (
           <g key={m.id}>
-            {segs.map(([p, q], idx) => (
+            {m.extraLabels?.map((lb, i) => lb.at && (
+              <DistanceLabel key={`xl${i}`} x={lb.at.x} y={lb.at.y} text={lb.text} theme={{ ...theme, labelBg: base }} highlighted={active} />
+            ))}
+            {segs.map(([p, q], idx) => p && q && (
               <g key={idx}>
                 <line
                   x1={p.x} y1={p.y} x2={q.x} y2={q.y}
@@ -148,40 +164,49 @@ export default function MeasurementOverlay({
 
       {/* ── In-progress draft ──────────────────────────────────────────── */}
       {draft && (() => {
+        const col  = draft.color ?? theme.lineColor;
         const segs = segments(draft.line, false);
         const last = draft.line.length ? draft.line[draft.line.length - 1] : null;
         return (
           <g>
+            {/* box wireframe (object scan) */}
+            {draft.edges?.map(([p, q], idx) => p && q && (
+              <line key={`e${idx}`} x1={p.x} y1={p.y} x2={q.x} y2={q.y}
+                stroke={col} strokeWidth={theme.lineWidth} strokeOpacity={0.9} strokeLinecap="round" />
+            ))}
             {/* circle preview ring */}
             {draft.ring && segments(draft.ring, true).map(([p, q], idx) => (
               <line key={`r${idx}`} x1={p.x} y1={p.y} x2={q.x} y2={q.y}
-                stroke={theme.lineColor} strokeWidth={theme.lineWidth} strokeOpacity={0.85} strokeLinecap="round" />
+                stroke={col} strokeWidth={theme.lineWidth} strokeOpacity={0.85} strokeLinecap="round" />
             ))}
             {/* committed path segments */}
             {segs.map(([p, q], idx) => (
               <line key={`s${idx}`} x1={p.x} y1={p.y} x2={q.x} y2={q.y}
-                stroke={theme.lineColor} strokeWidth={theme.lineWidth} strokeOpacity={theme.lineOpacity}
+                stroke={col} strokeWidth={theme.lineWidth} strokeOpacity={theme.lineOpacity}
                 strokeLinecap="round" strokeLinejoin="round" />
             ))}
             {/* dashed tail to cursor */}
             {last && draft.cursor && (
               <line x1={last.x} y1={last.y} x2={draft.cursor.x} y2={draft.cursor.y}
-                stroke={theme.lineColor} strokeWidth={theme.lineWidth} strokeOpacity={0.6}
+                stroke={col} strokeWidth={theme.lineWidth} strokeOpacity={0.6}
                 strokeLinecap="round" strokeDasharray="8 6" />
             )}
             {/* closing hint for polygons */}
-            {draft.closed && draft.line.length >= 2 && draft.line[0] && draft.cursor && (
+            {draft.closed && draft.kind === 'path' && draft.line.length >= 2 && draft.line[0] && draft.cursor && (
               <line x1={draft.cursor.x} y1={draft.cursor.y} x2={draft.line[0]!.x} y2={draft.line[0]!.y}
-                stroke={theme.lineColor} strokeWidth={theme.lineWidth} strokeOpacity={0.35}
+                stroke={col} strokeWidth={theme.lineWidth} strokeOpacity={0.35}
                 strokeLinecap="round" strokeDasharray="2 8" />
             )}
             {draft.markers.map((pt, idx) => pt && (
-              <circle key={`m${idx}`} cx={pt.x} cy={pt.y} r={theme.endpointRadius} fill={theme.endpointColor} stroke={theme.lineColor} strokeWidth={2} />
+              <circle key={`m${idx}`} cx={pt.x} cy={pt.y} r={theme.endpointRadius} fill={theme.endpointColor} stroke={col} strokeWidth={2} />
             ))}
-            {draft.cursor && (
-              <circle cx={draft.cursor.x} cy={draft.cursor.y} r={theme.endpointRadius - 1} fill={theme.lineColor} stroke="#FFFFFF" strokeWidth={2} />
+            {draft.kind !== 'box' && draft.cursor && (
+              <circle cx={draft.cursor.x} cy={draft.cursor.y} r={theme.endpointRadius - 1} fill={col} stroke="#FFFFFF" strokeWidth={2} />
             )}
-            {draft.labelAt && <DistanceLabel x={draft.labelAt.x} y={draft.labelAt.y} text={draft.primary} theme={theme} highlighted />}
+            {draft.extraLabels?.map((lb, i) => lb.at && (
+              <DistanceLabel key={`dl${i}`} x={lb.at.x} y={lb.at.y} text={lb.text} theme={{ ...theme, labelBg: col }} highlighted />
+            ))}
+            {draft.labelAt && draft.primary && <DistanceLabel x={draft.labelAt.x} y={draft.labelAt.y} text={draft.primary} theme={{ ...theme, labelBg: col }} highlighted />}
           </g>
         );
       })()}
