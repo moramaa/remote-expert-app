@@ -92,7 +92,8 @@ export function computeBox(points: Vec3[], seedNormal: Vec3, floorY: number | nu
 
 /**
  * 8 corners of the box: indices 0–3 = top rectangle (CCW), 4–7 = bottom
- * rectangle directly below. Bottom sits at floorY (or top if height is 0).
+ * rectangle directly below. Bottom sits `height` below the top plane, so
+ * adjusting `height` moves the bottom face.
  */
 export function boxCorners(b: BoxParams): Vec3[] {
   const hu = b.width / 2, hv = b.depth / 2;
@@ -102,9 +103,61 @@ export function boxCorners(b: BoxParams): Vec3[] {
     add(b.center, add(scale(b.u,  hu), scale(b.v,  hv))),
     add(b.center, add(scale(b.u, -hu), scale(b.v,  hv))),
   ];
-  const bottomY = b.floorY != null ? b.floorY : b.topY;
+  const bottomY = b.topY - b.height;
   const bottom = top.map((c) => ({ x: c.x, y: bottomY, z: c.z }));
   return [...top, ...bottom];
+}
+
+/**
+ * Segment the top face of the object from a raw point cloud (no normals needed):
+ * keep points at roughly the seed's height (same horizontal plane), then grow a
+ * connected region outward from the seed so far-away same-height clutter (other
+ * tables, the floor beyond a gap) is excluded.
+ */
+export function segmentTopFace(
+  points: Vec3[], seed: Vec3, yTol = 0.08,
+): Vec3[] {
+  // 1) coplanar-in-height candidates (same horizontal plane as the seed)
+  const coplanar = points.filter((p) => Math.abs(p.y - seed.y) <= yTol);
+  if (coplanar.length < 4) return coplanar.length ? coplanar : [seed];
+
+  const horiz2 = (a: Vec3, b: Vec3) => { const dx = a.x - b.x, dz = a.z - b.z; return dx * dx + dz * dz; };
+
+  // 2) adaptive gap: grid rays land farther apart in world space when the
+  //    object is far, so size the region-grow gap from the actual point
+  //    spacing (median nearest-neighbour distance) instead of a fixed value.
+  const sampleN = Math.min(coplanar.length, 40);
+  const nnd: number[] = [];
+  for (let i = 0; i < sampleN; i++) {
+    let best = Infinity;
+    for (let j = 0; j < coplanar.length; j++) {
+      if (i === j) continue;
+      const d = horiz2(coplanar[i], coplanar[j]);
+      if (d < best) best = d;
+    }
+    if (Number.isFinite(best)) nnd.push(Math.sqrt(best));
+  }
+  nnd.sort((a, b) => a - b);
+  const median = nnd.length ? nnd[Math.floor(nnd.length / 2)] : 0.1;
+  const gap = Math.max(0.3, median * 4);
+
+  // 3) region-grow from the seed using the adaptive gap
+  const gap2 = gap * gap;
+  const used = new Array(coplanar.length).fill(false);
+  const out: Vec3[] = [];
+  // queue starts from the candidate nearest the seed
+  let startIdx = 0, best = Infinity;
+  coplanar.forEach((p, i) => { const d = horiz2(p, seed); if (d < best) { best = d; startIdx = i; } });
+  const queue = [startIdx];
+  used[startIdx] = true;
+  while (queue.length) {
+    const cur = coplanar[queue.shift()!];
+    out.push(cur);
+    for (let i = 0; i < coplanar.length; i++) {
+      if (!used[i] && horiz2(cur, coplanar[i]) <= gap2) { used[i] = true; queue.push(i); }
+    }
+  }
+  return out;
 }
 
 /** The 12 edges of the box as index pairs into boxCorners(). */
