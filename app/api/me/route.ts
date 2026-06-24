@@ -10,6 +10,16 @@ export async function GET(request: NextRequest): Promise<Response> {
     return Response.json({ error: 'Missing id or role' }, { status: 400 });
   }
 
+  // ── Demo mode: return static profile, no DB needed ───────────────────────
+  const {
+    isDemoId, DEMO_WORKER_PROFILE, DEMO_EXPERT_PROFILE, DEMO_ADMIN_PROFILE,
+  } = await import('@/lib/demo-data');
+  if (isDemoId(id)) {
+    if (role === 'worker')        return Response.json(DEMO_WORKER_PROFILE);
+    if (role === 'expert')        return Response.json(DEMO_EXPERT_PROFILE);
+    if (role === 'administrator') return Response.json(DEMO_ADMIN_PROFILE);
+  }
+
   if (role === 'expert') {
     const expert = await prisma.expert.findUnique({
       where: { id },

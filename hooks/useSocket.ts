@@ -22,7 +22,12 @@ interface UseSocketResult {
 }
 
 function getSocketUrl(): string {
+  // NEXT_PUBLIC_SOCKET_URL can override for any custom topology.
+  if (process.env.NEXT_PUBLIC_SOCKET_URL) return process.env.NEXT_PUBLIC_SOCKET_URL;
   if (typeof window === 'undefined') return 'http://localhost:3001';
+  // In production the custom server (server.ts) serves Socket.IO on the same
+  // origin — no separate port.  In local dev it's on :3001.
+  if (process.env.NODE_ENV === 'production') return window.location.origin;
   return `${window.location.protocol}//${window.location.hostname}:3001`;
 }
 

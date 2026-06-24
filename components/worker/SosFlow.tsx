@@ -11,6 +11,7 @@ import type { SuggestionDTO } from '@/app/api/suggestions/route';
 import type { Socket } from 'socket.io-client';
 import type { ClientToServerEvents, ServerToClientEvents, SosAck } from '@/types/socket';
 import { getStoredUserId } from '@/lib/identity';
+import { isDemoId, DEMO_SESSIONS } from '@/lib/demo-data';
 
 type FlowStep = 'machine' | 'suggestions' | 'searching';
 
@@ -556,6 +557,7 @@ function SearchingStep({ machineName, onCancel }: { machineName: string; onCance
 // ── Main SosFlow component ────────────────────────────────────────────────────
 
 export default function SosFlow({ profile, socket, isConnected, onSessionJoined, onClose }: Props) {
+  const router = useRouter();
   const [step,      setStep]      = useState<FlowStep>('machine');
   const [machineId, setMachineId] = useState<string | null>(null);
   const [ticketId,  setTicketId]  = useState<string | null>(null);
@@ -591,6 +593,16 @@ export default function SosFlow({ profile, socket, isConnected, onSessionJoined,
   }, []);
 
   const startLiveSearch = useCallback(() => {
+    // Demo mode: play the searching animation then navigate to a matching preview
+    if (isDemoId(workerId)) {
+      setStep('searching');
+      const match = DEMO_SESSIONS.find((s) => s.machineId === machineId) ?? DEMO_SESSIONS[0];
+      setTimeout(() => {
+        router.push(`/worker?preview=${match.sessionId}`);
+      }, 2800);
+      return;
+    }
+
     if (!socket || !isConnected || !machineId) return;
     setStep('searching');
     socket.emit(

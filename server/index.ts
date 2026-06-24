@@ -9,6 +9,8 @@ import dotenv from 'dotenv';
 dotenv.config({ path: '.env',       override: true });
 dotenv.config({ path: '.env.local', override: false }); // .env wins for shared keys
 
+import type { IncomingMessage, ServerResponse } from 'http';
+import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
 import { MACHINE_MAP } from '../lib/machines';
@@ -29,20 +31,28 @@ import type {
   TicketSummary,
 } from '../types/socket';
 
-const PORT = 3001;
+/** Port used only in standalone mode (local dev: npm run server). */
+const STANDALONE_PORT = parseInt(process.env['SOCKET_PORT'] ?? '3001', 10);
 
-// ── Socket.io server ─────────────────────────────────────────────────────────
+/** CORS origins for standalone mode. Overridden in embedded/custom-server mode. */
+const STANDALONE_ORIGINS = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://192.168.1.178:3000',
+];
 
-const io = new Server<ClientToServerEvents, ServerToClientEvents>(PORT, {
-  cors: {
-    origin: [
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      'http://192.168.1.178:3000',
-    ],
-    methods: ['GET', 'POST'],
-  },
-});
+// ─────────────────────────────────────────────────────────────────────────────
+// registerHandlers — attach all Socket.IO event logic to an existing `io` instance.
+//
+// Called from:
+//   • standalone mode (local dev, `npm run server`) — io is a bare Server on :3001
+//   • custom server mode (Railway production, `server.ts`) — io is attached to the
+//     shared Next.js HTTP server so both live on the same port
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function registerHandlers(
+  io: Server<ClientToServerEvents, ServerToClientEvents>,
+): void {
 
 // ── Phase 2: availability + matching ─────────────────────────────────────────
 
@@ -739,4 +749,26 @@ async function triggerAiSummary(sessionId: string): Promise<void> {
   }
 }
 
-console.log(`[socket] server listening on :${PORT}`);
+} // end registerHandlers
+
+// ── Standalone boot (local dev: npm run server) ───────────────────────────────
+// When this file is the process entry point (process.argv[1] points here),
+// create a bare Socket.IO server that manages its own HTTP on STANDALONE_PORT.
+// When imported by server.ts (production custom-server), this block is skipped.
+//
+// We check argv[1] suffix rather than import.meta.url so it works with both
+// tsx (runs .ts directly) and compiled .js output.
+const _argv1 = process.argv[1] ?? '';
+if (_argv1.endsWith('server/index.ts') || _argv1.endsWith('server/index.js')) {
+  const standaloneHttp = createServer((_req: IncomingMessage, res: ServerResponse) => {
+    res.writeHead(404);
+    res.end('Socket.IO server — use the Next.js app on :3000');
+  });
+  const standaloneIo = new Server<ClientToServerEvents, ServerToClientEvents>(standaloneHttp, {
+    cors: { origin: STANDALONE_ORIGINS, methods: ['GET', 'POST'] },
+  });
+  registerHandlers(standaloneIo);
+  standaloneHttp.listen(STANDALONE_PORT, () => {
+    console.log(`[socket] standalone server listening on :${STANDALONE_PORT}`);
+  });
+}

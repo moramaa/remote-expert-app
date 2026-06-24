@@ -81,6 +81,18 @@ interface MatterportSdk {
       result?: MatterportVec3,
     ): MatterportVec3;
   };
+  Renderer?: {
+    /**
+     * Raycasts from a screen pixel (top-left origin) into the model and returns
+     * the first surface hit. `position` is null if the ray misses the model.
+     * Lets us sample many points programmatically without moving the pointer.
+     */
+    getWorldPositionData(
+      screenPosition: { x: number; y: number },
+      height?: number,
+      includeHiddenFloors?: boolean,
+    ): Promise<{ position: MatterportVec3 | null; floor: number }>;
+  };
   Sweep: {
     moveTo(
       sweep: string,

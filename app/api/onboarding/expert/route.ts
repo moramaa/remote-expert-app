@@ -17,6 +17,11 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
+  const { isDemoId } = await import('@/lib/demo-data');
+  if (isDemoId((body as Record<string, unknown>)?.id as string)) {
+    return Response.json({ ok: true }, { status: 201 });
+  }
+
   const parsed = Schema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: parsed.error.flatten() }, { status: 422 });

@@ -15,6 +15,24 @@ export async function GET(
 ): Promise<Response> {
   const { id } = await params;
 
+  // ── Demo mode: serve static session data, no DB needed ──────────────────
+  const { isDemoId, getDemoSession } = await import('@/lib/demo-data');
+  if (isDemoId(id)) {
+    const d = getDemoSession(id);
+    if (!d) return Response.json({ error: 'Demo session not found' }, { status: 404 });
+    return Response.json({
+      sessionId:       d.sessionId,   machineId:       d.machineId,
+      machineName:     d.machineName, startedAt:       d.startedAt,
+      endedAt:         d.endedAt,     durationSeconds: d.durationSeconds,
+      resolvedExpert:  d.resolvedExpert,  resolvedWorker:  d.resolvedWorker,
+      safetyTriggered: d.safetyTriggered, locationDept:    d.locationDept,
+      locationLine:    d.locationLine,    locationStation: d.locationStation,
+      summary:         d.summary,    markers:         d.markers,
+      instructions:    d.instructions,   pttCount:        d.pttCount,
+      positionLog:     d.positionLog,
+    });
+  }
+
   const session = await prisma.session.findUnique({ where: { id } });
   if (!session || !session.endedAt) {
     return Response.json({ error: 'Session not found' }, { status: 404 });
